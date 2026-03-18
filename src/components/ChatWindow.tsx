@@ -24,12 +24,13 @@ interface ChatWindowProps {
   onAddAgent: (agent: Agent) => void;
   agentTeamsEnabled?: boolean;
   onOrchestrationDone?: (event: OrchestrationDoneEvent) => void;
+  onPermissionNotification?: (agentName: string, request: PermissionRequest) => void;
   debugMode: boolean;
 }
 
 const EMPTY_KEYS = { openai: '', anthropic: '', gemini: '', github: '' };
 
-export default function ChatWindow({ agent, agents, skills, onUpdateAgent, onAddAgent, agentTeamsEnabled, onOrchestrationDone, debugMode }: ChatWindowProps) {
+export default function ChatWindow({ agent, agents, skills, onUpdateAgent, onAddAgent, agentTeamsEnabled, onOrchestrationDone, onPermissionNotification, debugMode }: ChatWindowProps) {
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState('');
@@ -615,6 +616,7 @@ export default function ChatWindow({ agent, agents, skills, onUpdateAgent, onAdd
           } : undefined,
           onPermissionRequest: (request) => {
             setPendingPermission(request);
+            onPermissionNotification?.(agentState.name, request);
           },
           onStderr: debugMode ? (text) => addDebug(`[stderr] ${text.trim()}`) : undefined,
           colleagues: otherAgents.map(a => ({ name: a.name, role: a.role })),

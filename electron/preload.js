@@ -174,4 +174,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     createPr: (cwd, title, body, baseBranch) =>
       ipcRenderer.invoke("git:createPr", cwd, title, body, baseBranch),
   },
+
+  // Notifications
+  notifications: {
+    show: (title, body, options) =>
+      ipcRenderer.invoke("notification:show", title, body, options),
+  },
 });

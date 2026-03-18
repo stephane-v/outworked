@@ -6,10 +6,14 @@ const {
   session,
   ipcMain,
   dialog,
+  Notification,
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { spawn, execSync } = require("child_process");
+
+// Set the app name early so macOS notifications show "Outworked" instead of "Electron"
+app.setName("Outworked");
 
 let mainWindow = null;
 
@@ -608,7 +612,9 @@ function setupShellIPC() {
         const tmpDir = path.join(app.getPath("temp"), "outworked-mcp");
         try {
           fs.mkdirSync(tmpDir, { recursive: true });
-        } catch { /* best effort */ }
+        } catch {
+          /* best effort */
+        }
         mcpConfigPath = path.join(tmpDir, `mcp-${reqId}.json`);
         fs.writeFileSync(
           mcpConfigPath,
@@ -703,7 +709,11 @@ function setupShellIPC() {
     // Helper to clean up temp MCP config file
     function cleanupMcpConfig() {
       if (mcpConfigPath) {
-        try { fs.unlinkSync(mcpConfigPath); } catch { /* already gone */ }
+        try {
+          fs.unlinkSync(mcpConfigPath);
+        } catch {
+          /* already gone */
+        }
       }
     }
 
@@ -1434,7 +1444,10 @@ function setupFileWatcherIPC() {
         console.error("[fs:watchWorkspace] watcher error:", err.message);
       });
     } catch (err) {
-      console.error("[fs:watchWorkspace] failed to start watcher:", err.message);
+      console.error(
+        "[fs:watchWorkspace] failed to start watcher:",
+        err.message,
+      );
     }
   });
 
@@ -1561,12 +1574,20 @@ function setupGitIPC() {
       let ahead = 0;
       let behind = 0;
       try {
-        remote = git("git rev-parse --abbrev-ref --symbolic-full-name @{u}", cwd);
-        const counts = git('git rev-list --left-right --count HEAD...@{u}', cwd);
+        remote = git(
+          "git rev-parse --abbrev-ref --symbolic-full-name @{u}",
+          cwd,
+        );
+        const counts = git(
+          "git rev-list --left-right --count HEAD...@{u}",
+          cwd,
+        );
         const [a, b] = counts.split(/\s+/);
         ahead = parseInt(a, 10) || 0;
         behind = parseInt(b, 10) || 0;
-      } catch { /* no remote tracking */ }
+      } catch {
+        /* no remote tracking */
+      }
       return { ok: true, current, branches, remote, ahead, behind };
     } catch (err) {
       return { ok: false, error: err.message };
@@ -1703,13 +1724,13 @@ function setupGitIPC() {
         const x = line[0]; // index status
         const y = line[1]; // worktree status
         const filepath = line.slice(3);
-        if (x === '?' && y === '?') {
-          untracked.push({ status: '??', path: filepath });
+        if (x === "?" && y === "?") {
+          untracked.push({ status: "??", path: filepath });
         } else {
-          if (x !== ' ' && x !== '?') {
+          if (x !== " " && x !== "?") {
             staged.push({ status: x, path: filepath });
           }
-          if (y !== ' ' && y !== '?') {
+          if (y !== " " && y !== "?") {
             unstaged.push({ status: y, path: filepath });
           }
         }
@@ -2095,12 +2116,15 @@ function createWindow() {
     });
   });
 
+  const iconPath = path.join(__dirname, "..", "build", "icon.png");
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 960,
     minHeight: 600,
     title: "Outworked — AI Agent HQ",
+    icon: iconPath,
     backgroundColor: "#0d0d1a",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -2109,6 +2133,7 @@ function createWindow() {
       sandbox: false,
     },
   });
+
 
   // Load the Vite build output
   const indexPath = path.join(__dirname, "..", "dist-renderer", "index.html");
@@ -2124,6 +2149,28 @@ function createWindow() {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+  });
+}
+
+function setupNotificationIPC() {
+  ipcMain.handle("notification:show", (_event, title, body, options = {}) => {
+    if (!Notification.isSupported())
+      return { ok: false, error: "Notifications not supported" };
+    const notif = new Notification({
+      title,
+      body,
+      silent: options.silent ?? true, // We handle sounds in the renderer
+      urgency: options.urgency ?? "normal",
+    });
+    notif.show();
+    // When clicked, focus the main window
+    notif.on("click", () => {
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      }
+    });
+    return { ok: true };
   });
 }
 
@@ -2180,6 +2227,7 @@ app.whenReady().then(() => {
   setupPermissionsIPC();
   setupMusicIPC();
   setupSessionIPC();
+  setupNotificationIPC();
   createWindow();
 
   // On startup, ensure the default workspace is accessible

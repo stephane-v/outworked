@@ -1,6 +1,6 @@
 {
   "name": "outworked",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "AI agent orchestration tool",
   "author": "Outworked Team",
   "private": true,
@@ -13,15 +13,7 @@
     "electron:dev": "vite build && electron .",
     "electron:build": "vite build && electron-builder --config electron-builder.yml"
   },
-  "dependencies": {
-    "phaser": "^3.90.0",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "react-markdown": "^10.1.0",
-    "react-syntax-highlighter": "^16.1.1",
-    "remark-gfm": "^4.0.1",
-    "uuid": "^13.0.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.1",
     "@types/node": "^20",
@@ -33,8 +25,15 @@
     "electron": "^41.0.0",
     "electron-builder": "^26.8.1",
     "eslint": "^9",
+    "phaser": "^3.90.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^16.1.1",
+    "remark-gfm": "^4.0.1",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "uuid": "^13.0.0",
     "vite": "^7.3.1"
   }
 }

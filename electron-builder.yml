@@ -1,15 +1,26 @@
 appId: com.outworked.app
 productName: Outworked
+icon: build/icon.png
 directories:
   output: dist
 files:
   - electron/**/*
   - dist-renderer/**/*
+  - build/icon.png
+  - build/icon.icns
+npmRebuild: false
 mac:
+  icon: build/icon.icns
   category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
   target:
     - dmg
     - zip
+afterSign: null
 win:
   target:
     - nsis

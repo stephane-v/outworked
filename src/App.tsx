@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
-import { Agent, AgentSkill, SubagentDef } from './lib/types';
+import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
+import { Agent, AgentSkill, AgentStatus, SubagentDef } from './lib/types';
 import { loadAgents, saveAgents, loadSkills, saveSkills, createAgent, createClaudeAgentFile, generateAgentWithAI, resetProject, syncClaudeSubagents, upgradeAgentsToClaudeCode, parseSubagentFrontmatter } from './lib/storage';
 import { migrateHistoryToSession, loadSession } from './lib/sessions';
 import { getClaudeCodeAuthStatus, isElectron, onClaudeAgentsChanged, watchProjectAgents, readClaudeSettings, deleteClaudeAgentFile } from './lib/terminal';
@@ -18,6 +18,10 @@ import PermissionsPanel, { PermissionsBanner } from './components/PermissionsPan
 import WorkspacePanel from './components/WorkspacePanel';
 import GitPanel from './components/GitPanel';
 import CostDashboard from './components/CostDashboard';
+import NotificationCenter, { NotificationToast } from './components/NotificationCenter';
+import { AppNotification, showDesktopNotification } from './lib/notifications';
+import { playTaskComplete, playApprovalNeeded, playAgentStuck, playOrchestrationComplete, playOrchestrationWarning, getSoundsEnabled } from './lib/sounds';
+import { sendClaudeCodeInput, PermissionRequest } from './lib/terminal';
 
 const OfficeCanvas = lazy(() => import('./components/OfficeCanvas'));
 
@@ -41,6 +45,8 @@ export default function App() {
   const [permsDismissed, setPermsDismissed] = useState(false);
   const [debugMode, setDebugMode] = useState(() => localStorage.getItem('outworked_debug') === '1');
   const [orchToast, setOrchToast] = useState<OrchestrationDoneEvent | null>(null);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [latestToast, setLatestToast] = useState<AppNotification | null>(null);
 
   useEffect(() => {
     async function init() {
@@ -156,6 +162,55 @@ export default function App() {
     });
   }, []);
 
+  const pushNotification = useCallback((notif: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => {
+    const full: AppNotification = {
+      ...notif,
+      id: crypto.randomUUID(),
+      timestamp: Date.now(),
+      read: false,
+    };
+    setNotifications(prev => [full, ...prev].slice(0, 100)); // Keep max 100
+    setLatestToast(full);
+  }, []);
+
+  // Track previous agent statuses to detect changes
+  const prevStatusRef = useRef<Record<string, AgentStatus>>({});
+
+  useEffect(() => {
+    for (const agent of agents) {
+      const prev = prevStatusRef.current[agent.id];
+      if (prev === agent.status) continue;
+
+      // Agent just became stuck
+      if (agent.status === 'stuck' && prev !== 'stuck') {
+        pushNotification({
+          type: 'agent-stuck',
+          title: `${agent.name} is stuck`,
+          body: agent.currentThought || 'No progress detected',
+          agentName: agent.name,
+          agentColor: agent.color,
+        });
+        if (getSoundsEnabled()) playAgentStuck();
+        showDesktopNotification(`${agent.name} is stuck`, agent.currentThought || 'No progress detected');
+      }
+
+      // Agent finished (went from working/thinking/speaking to idle)
+      if (agent.status === 'idle' && (prev === 'working' || prev === 'thinking' || prev === 'speaking')) {
+        pushNotification({
+          type: 'task-complete',
+          title: `${agent.name} finished`,
+          body: agent.currentThought || 'Task complete',
+          agentName: agent.name,
+          agentColor: agent.color,
+        });
+        if (getSoundsEnabled()) playTaskComplete();
+        showDesktopNotification(`${agent.name} finished`, agent.currentThought || 'Task complete');
+      }
+
+      prevStatusRef.current[agent.id] = agent.status;
+    }
+  }, [agents, pushNotification]);
+
   const handleAgentClick = useCallback((agent: Agent) => {
     setSelectedAgentId(agent.id);
     setRightPanel('chat');
@@ -266,7 +321,38 @@ export default function App() {
   const handleOrchestrationDone = useCallback((event: OrchestrationDoneEvent) => {
     setOrchToast(event);
     setTimeout(() => setOrchToast(null), 8000);
-  }, []);
+
+    // Push notification
+    const allSuccess = event.failed === 0;
+    pushNotification({
+      type: 'orchestration-done',
+      title: allSuccess ? 'All tasks complete!' : 'Tasks finished with issues',
+      body: `${event.success} succeeded, ${event.failed} failed — ${event.plan}`,
+    });
+    if (getSoundsEnabled()) {
+      if (allSuccess) playOrchestrationComplete();
+      else playOrchestrationWarning();
+    }
+    showDesktopNotification(
+      allSuccess ? 'All tasks complete!' : 'Tasks finished',
+      `${event.success}/${event.success + event.failed} tasks succeeded`
+    );
+  }, [pushNotification]);
+
+  const handlePermissionNotification = useCallback((agentName: string, request: PermissionRequest) => {
+    pushNotification({
+      type: 'approval',
+      title: `${agentName} needs approval`,
+      body: `${request.tool}: ${request.description}`,
+      agentName,
+      agentColor: agents.find(a => a.name === agentName)?.color,
+      permissionReqId: request.reqId,
+      permissionTool: request.tool,
+      permissionDesc: request.description,
+    });
+    if (getSoundsEnabled()) playApprovalNeeded();
+    showDesktopNotification(`${agentName} needs approval`, `${request.tool}: ${request.description}`);
+  }, [agents, pushNotification]);
 
   function handleNewProject() {
     if (!window.confirm('Start a new project? This will clear all chat history, tasks, and working context. Agents and skills will be kept.')) return;
@@ -334,6 +420,19 @@ export default function App() {
           >
             {agentTeamsEnabled ? '👥 Teams ON' : '👤 Teams OFF'}
           </button>
+          <NotificationCenter
+            notifications={notifications}
+            onDismiss={(id) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))}
+            onDismissAll={() => setNotifications([])}
+            onApprovalResponse={async (notifId, reqId, allow) => {
+              await sendClaudeCodeInput(reqId, allow ? 'yes\n' : 'no\n');
+              setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, read: true } : n));
+            }}
+            onNavigateToAgent={(name) => {
+              const a = agents.find(ag => ag.name === name);
+              if (a) { setSelectedAgentId(a.id); setRightPanel('chat'); }
+            }}
+          />
           <div className="flex gap-1.5">
             <button
               onClick={() => setShowPermsModal(true)}
@@ -410,6 +509,10 @@ export default function App() {
                 </div>
               </div>
             )}
+            <NotificationToast
+              notification={latestToast}
+              onDismiss={() => setLatestToast(null)}
+            />
             <div className="absolute bottom-0 left-0 right-0 px-3 py-2 bg-slate-950/90 backdrop-blur-sm border-t border-slate-700 flex flex-col gap-1">
               {/* Attention-needed agents (stuck / waiting) */}
               {agents.filter((a) => a.status === 'stuck' || a.status === 'waiting-input' || a.status === 'waiting-approval').length > 0 && (
@@ -503,6 +606,7 @@ export default function App() {
                 onAddAgent={handleAddDynamicAgent}
                 agentTeamsEnabled={agentTeamsEnabled}
                 onOrchestrationDone={handleOrchestrationDone}
+                onPermissionNotification={handlePermissionNotification}
                 debugMode={debugMode}
               />
             ) : rightPanel === 'editor' && selectedAgent ? (
