@@ -310,8 +310,17 @@ export class OfficeScene extends Phaser.Scene {
           if (item) {
             item.x = snapped.tileX;
             item.y = snapped.tileY;
-            // Update desk positions if it's a desk
-            this.rebuildDeskPositions();
+            // If a desk was moved, reassign agents to new desk positions
+            if (item.type === 'desk') {
+              this.rebuildDeskPositions();
+              this.assignDesks();
+              // Re-walk any working agents to their (possibly new) desk
+              for (const agent of this.agents) {
+                if (agent.status !== 'idle' && agent.status !== 'collaborating') {
+                  this.transitionAgentStatus(agent);
+                }
+              }
+            }
             if (this.onFurnitureMove) {
               this.onFurnitureMove([...this.furnitureItems]);
             }
@@ -727,7 +736,6 @@ export class OfficeScene extends Phaser.Scene {
     this.deskPositions = [];
     this.furnitureItems = [];
 
-    // Playable bounds (inside the dead zone margin)
     const deskStart = 2;
     const deskEnd = this.rows - 2;
     const deskRange = deskEnd - deskStart;
@@ -749,22 +757,18 @@ export class OfficeScene extends Phaser.Scene {
     // Left wall desks
     for (const dr of deskRows) {
       this.createFurnitureContainer(`desk-${fIdx++}`, "desk", 1, dr);
-      this.deskPositions.push({ x: 2, y: dr + 1 });
     }
 
     // Right wall desks
     for (const dr of deskRows) {
       this.createFurnitureContainer(`desk-${fIdx++}`, "desk", rightCol, dr);
-      this.deskPositions.push({ x: rightCol + 1, y: dr + 1 });
     }
 
     // Center desks
     const cLeft = Math.floor(this.cols / 2) - 2;
     const cRight = Math.floor(this.cols / 2) + 1;
     this.createFurnitureContainer(`desk-${fIdx++}`, "desk", cLeft, 1);
-    this.deskPositions.push({ x: cLeft + 1, y: 2 });
     this.createFurnitureContainer(`desk-${fIdx++}`, "desk", cRight, 1);
-    this.deskPositions.push({ x: cRight + 1, y: 2 });
 
     // Plants (corners)
     this.createFurnitureContainer("plant-0", "plant", 0, 1);
@@ -953,6 +957,10 @@ export class OfficeScene extends Phaser.Scene {
 
     // Desk fan
     this.createFurnitureContainer("fan-0", "fan", 4, deskRows[0]);
+
+    // Build desk chair positions from actual furniture locations
+    // (which may have been overridden by saved layout)
+    this.rebuildDeskPositions();
   }
 
   private createFurnitureContainer(
