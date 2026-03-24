@@ -5,7 +5,7 @@
 <h1 align="center">Outworked</h1>
 
 <p align="center">
-  <strong>AI agent orchestration with an 8-bit office GUI.</strong>
+  <strong>AI agent orchestration with an pixel office GUI.</strong>
 </p>
 
 <p align="center">
@@ -48,7 +48,7 @@
 
 ## Features
 
-- **Visual Office** — Phaser-powered 8-bit office where agents walk, sit, and collaborate in real time
+- **Visual Office** — Phaser-powered pixel office where agents walk, sit, and collaborate in real time
 - **Agent Customization** — Give each agent a name, role, personality (system prompt), model, and sprite
 - **Task Orchestration** — Describe a goal; the router breaks it into tasks and assigns them to agents
 - **Multi-Agent Collaboration** — Agents talk to each other via `[ASK:AgentName]` and a shared message bus
@@ -62,7 +62,7 @@
 - **Parallel Processing** — Multiple agents tackle subtasks simultaneously
 - **Permissions & Safety** — Allowlists, directory restrictions, timeouts, audit logging, and approval prompts
 - **Desktop Notifications** — Get notified when tasks finish or agents need approval
-- **8-Bit Soundtrack** — Because every office needs background music
+- **Amazing Soundtrack** — Because every office needs background music
 
 ---
 
@@ -140,8 +140,6 @@ electron/
 └── sdk-bridge.js     # Claude Code SDK bridge
 
 public/
-├── sprites/          # 8-bit character sprite sheets (procedurally generated)
-├── backgrounds/      # Office background art
 └── music/            # Background music tracks
 ```
 
