@@ -1,16 +1,6 @@
-export type ModelId =
-  | 'gpt-5.4'
-  | 'gpt-5.3-codex'
-  | 'gpt-5.2'
-  | 'gpt-5-mini'
-  | 'claude-opus-4-6'
-  | 'claude-sonnet-4-6'
-  | 'claude-code'
-  | 'gemini-2.5-pro'
-  | 'gemini-2.5-flash'
-  | 'gemini-2.0-flash'
+export type ModelId = 'claude-code'
 
-export type Provider = 'openai' | 'anthropic' | 'google' | 'claude-code';
+export type Provider = 'claude-code';
 
 export interface SkillMetadata {
   emoji?: string;
@@ -177,15 +167,6 @@ export interface ApiKeys {
 }
 
 export const MODELS: { id: ModelId; label: string; provider: Provider }[] = [
-  { id: 'gpt-5.4', label: 'GPT-5.4', provider: 'openai' },
-  { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', provider: 'openai' },
-  { id: 'gpt-5.2', label: 'GPT-5.2', provider: 'openai' },
-  { id: 'gpt-5-mini', label: 'GPT-5 Mini', provider: 'openai' },
-  { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', provider: 'anthropic' },
-  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', provider: 'anthropic' },
-  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', provider: 'google' },
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', provider: 'google' },
-  { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', provider: 'google' },
   { id: 'claude-code', label: 'Claude Code (local)', provider: 'claude-code' },
 ];
 
@@ -198,6 +179,10 @@ export const SPRITE_KEYS = [
   'char_orange',
   'char_pink',
   'char_teal',
+  'char_cyan',
+  'char_lime',
+  'char_rose',
+  'char_amber',
 ];
 
 export const AGENT_COLORS = [
@@ -209,4 +194,8 @@ export const AGENT_COLORS = [
   '#f97316', // orange
   '#ec4899', // pink
   '#14b8a6', // teal
+  '#06b6d4', // cyan
+  '#84cc16', // lime
+  '#f43f5e', // rose
+  '#f59e0b', // amber
 ];

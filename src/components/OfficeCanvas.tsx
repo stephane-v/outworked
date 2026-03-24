@@ -1,13 +1,17 @@
 import { useEffect, useRef } from 'react';
 import { Agent } from '../lib/types';
+import type { FurnitureItem } from '../phaser/OfficeScene';
 
 interface OfficeCanvasProps {
   agents: Agent[];
   selectedAgentId: string | null;
   onAgentClick: (agent: Agent) => void;
+  onAgentMove?: (agentId: string, x: number, y: number) => void;
+  onFurnitureMove?: (items: FurnitureItem[]) => void;
+  furnitureLayout?: FurnitureItem[] | null;
 }
 
-export default function OfficeCanvas({ agents, selectedAgentId, onAgentClick }: OfficeCanvasProps) {
+export default function OfficeCanvas({ agents, selectedAgentId, onAgentClick, onAgentMove, onFurnitureMove, furnitureLayout }: OfficeCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<import('phaser').Game | null>(null);
   const sceneRef = useRef<import('../phaser/OfficeScene').OfficeScene | null>(null);
@@ -25,6 +29,9 @@ export default function OfficeCanvas({ agents, selectedAgentId, onAgentClick }: 
 
       const scene = new OfficeScene();
       scene.setOnAgentClick(onAgentClick);
+      if (onAgentMove) scene.setOnAgentMove(onAgentMove);
+      if (onFurnitureMove) scene.setOnFurnitureMove(onFurnitureMove);
+      if (furnitureLayout) scene.setFurnitureLayout(furnitureLayout);
       sceneRef.current = scene;
 
       const rect = containerRef.current.getBoundingClientRect();
@@ -81,6 +88,19 @@ export default function OfficeCanvas({ agents, selectedAgentId, onAgentClick }: 
       sceneRef.current.setOnAgentClick(onAgentClick);
     }
   }, [onAgentClick]);
+
+  // Update move handlers
+  useEffect(() => {
+    if (sceneRef.current && onAgentMove) {
+      sceneRef.current.setOnAgentMove(onAgentMove);
+    }
+  }, [onAgentMove]);
+
+  useEffect(() => {
+    if (sceneRef.current && onFurnitureMove) {
+      sceneRef.current.setOnFurnitureMove(onFurnitureMove);
+    }
+  }, [onFurnitureMove]);
 
   return (
     <div

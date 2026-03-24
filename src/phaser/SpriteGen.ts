@@ -18,10 +18,16 @@ export interface CharacterPalette {
   eye: number;
   mouth: number;
   hairStyle: number;
+  glasses: boolean;
+  eyeColor: number;
 }
 
-const SKIN_TONES = [0xffe0bd, 0xf5c8a0, 0xd4a574, 0xc68642, 0x8d5524];
-const HAIR_COLORS = [0x2c1810, 0x8b4513, 0xd4a020, 0xc0392b, 0x1a1a2e];
+const SKIN_TONES = [0xffe0bd, 0xf5c8a0, 0xd4a574, 0xc68642, 0x8d5524, 0xfce4c0, 0xb87840];
+const HAIR_COLORS = [0x2c1810, 0x8b4513, 0xd4a020, 0xc0392b, 0x1a1a2e, 0xe8e0d8, 0x4a2060, 0x1a6030];
+const PANTS_COLORS = [0x2c3e50, 0x1a1a2e, 0x3d2b1f, 0x2d3436, 0x192a56, 0x4a3728];
+const SHOE_COLORS = [0x1a1a2e, 0x2c1810, 0x4a3728, 0x333333, 0x8b0000];
+const EYE_COLORS = [0x3B5998, 0x2d6a4f, 0x8b4513, 0x4a4a4a, 0x1a6030, 0x6b3fa0];
+const HAIR_STYLE_COUNT = 8; // 5 original + 3 new
 
 export function buildPalette(shirtColor: number, index: number): CharacterPalette {
   const skinIdx = index % SKIN_TONES.length;
@@ -36,12 +42,14 @@ export function buildPalette(shirtColor: number, index: number): CharacterPalett
     shirt: shirtColor,
     shirtDark: dark,
     hair: HAIR_COLORS[hairIdx],
-    pants: 0x2c3e50,
-    shoes: 0x1a1a2e,
+    pants: PANTS_COLORS[index % PANTS_COLORS.length],
+    shoes: SHOE_COLORS[index % SHOE_COLORS.length],
     white: 0xffffff,
     eye: 0x1a1a2e,
     mouth: 0xc0392b,
-    hairStyle: index % 5,
+    hairStyle: index % HAIR_STYLE_COUNT,
+    glasses: index % 3 === 1, // every 3rd agent gets glasses
+    eyeColor: EYE_COLORS[index % EYE_COLORS.length],
   };
 }
 
@@ -248,7 +256,7 @@ function drawHead(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
     ctx.ellipse(CX + 4, cy + 1, 3.5, 3, 0, 0, Math.PI * 2);
     ctx.fill();
     // Iris
-    ctx.fillStyle = '#3B5998';
+    ctx.fillStyle = hex(p.eyeColor);
     ctx.beginPath();
     ctx.arc(CX - 3.5, cy + 1.5, 2.2, 0, Math.PI * 2);
     ctx.fill();
@@ -334,7 +342,7 @@ function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
   const r = HEAD_R;
   ctx.fillStyle = hex(p.hair);
 
-  switch (style % 5) {
+  switch (style % HAIR_STYLE_COUNT) {
     case 0: { // Short neat
       ctx.beginPath();
       ctx.arc(CX, cy, r + 2, Math.PI, 0);
@@ -342,7 +350,6 @@ function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
       ctx.lineTo(CX - r - 2, cy - 1);
       ctx.closePath();
       ctx.fill();
-      // Highlight
       ctx.fillStyle = lighten(p.hair, 30);
       ctx.beginPath();
       ctx.ellipse(CX - 2, cy - r, 5, 2.5, -0.2, 0, Math.PI * 2);
@@ -354,7 +361,6 @@ function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
       ctx.arc(CX, cy, r + 2, Math.PI - 0.1, 0.1);
       ctx.closePath();
       ctx.fill();
-      // Swoop fringe
       ctx.beginPath();
       ctx.moveTo(CX - 4, cy - r - 2);
       ctx.quadraticCurveTo(CX + 12, cy - r - 1, CX + r + 4, cy + 1);
@@ -369,12 +375,10 @@ function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
       break;
     }
     case 2: { // Long
-      // Top cap
       ctx.beginPath();
       ctx.arc(CX, cy, r + 2, Math.PI - 0.2, 0.2);
       ctx.closePath();
       ctx.fill();
-      // Right side strand
       ctx.beginPath();
       ctx.moveTo(CX + r + 1, cy - 2);
       ctx.lineTo(CX + r + 4, cy + 8);
@@ -382,7 +386,6 @@ function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
       ctx.lineTo(CX + r - 2, cy - 2);
       ctx.closePath();
       ctx.fill();
-      // Left side strand
       ctx.beginPath();
       ctx.moveTo(CX - r - 1, cy - 2);
       ctx.lineTo(CX - r - 4, cy + 8);
@@ -437,7 +440,131 @@ function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
       ctx.fill();
       break;
     }
+    case 5: { // Top bun / updo
+      // Base cap
+      ctx.beginPath();
+      ctx.arc(CX, cy, r + 2, Math.PI, 0);
+      ctx.lineTo(CX + r + 2, cy - 1);
+      ctx.lineTo(CX - r - 2, cy - 1);
+      ctx.closePath();
+      ctx.fill();
+      // Bun on top
+      ctx.beginPath();
+      ctx.arc(CX, cy - r - 4, 6, 0, Math.PI * 2);
+      ctx.fill();
+      // Bun highlight
+      ctx.fillStyle = lighten(p.hair, 30);
+      ctx.beginPath();
+      ctx.arc(CX - 1, cy - r - 6, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      // Hair band
+      ctx.fillStyle = hex(p.shirt); // matches shirt for style
+      ctx.fillRect(CX - 4, cy - r - 1, 8, 2);
+      break;
+    }
+    case 6: { // Mohawk / faux hawk
+      // Shaved sides
+      ctx.beginPath();
+      ctx.arc(CX, cy, r + 1, Math.PI + 0.3, -0.3);
+      ctx.closePath();
+      ctx.fill();
+      // Tall center strip
+      for (let i = 0; i < 5; i++) {
+        const mx = CX - 6 + i * 3;
+        const mh = 6 + Math.sin(i * 0.8) * 4;
+        ctx.beginPath();
+        ctx.moveTo(mx - 2, cy - r + 2);
+        ctx.lineTo(mx, cy - r - mh);
+        ctx.lineTo(mx + 2, cy - r + 2);
+        ctx.closePath();
+        ctx.fill();
+      }
+      // Highlight on tips
+      ctx.fillStyle = lighten(p.hair, 40);
+      for (let i = 0; i < 5; i++) {
+        const mx = CX - 6 + i * 3;
+        const mh = 6 + Math.sin(i * 0.8) * 4;
+        ctx.beginPath();
+        ctx.arc(mx, cy - r - mh + 1, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case 7: { // Bob cut
+      // Full cap
+      ctx.beginPath();
+      ctx.arc(CX, cy, r + 2.5, Math.PI - 0.1, 0.1);
+      ctx.closePath();
+      ctx.fill();
+      // Left side bob
+      ctx.beginPath();
+      ctx.moveTo(CX - r - 2, cy - 2);
+      ctx.quadraticCurveTo(CX - r - 4, cy + 5, CX - r - 1, cy + 8);
+      ctx.quadraticCurveTo(CX - r + 4, cy + 10, CX - r + 2, cy - 2);
+      ctx.closePath();
+      ctx.fill();
+      // Right side bob
+      ctx.beginPath();
+      ctx.moveTo(CX + r + 2, cy - 2);
+      ctx.quadraticCurveTo(CX + r + 4, cy + 5, CX + r + 1, cy + 8);
+      ctx.quadraticCurveTo(CX + r - 4, cy + 10, CX + r - 2, cy - 2);
+      ctx.closePath();
+      ctx.fill();
+      // Front bangs
+      ctx.beginPath();
+      ctx.moveTo(CX - 8, cy - r + 1);
+      ctx.quadraticCurveTo(CX, cy - r - 1, CX + 8, cy - r + 1);
+      ctx.lineTo(CX + 6, cy - r + 5);
+      ctx.quadraticCurveTo(CX, cy - r + 3, CX - 6, cy - r + 5);
+      ctx.closePath();
+      ctx.fill();
+      // Highlight
+      ctx.fillStyle = lighten(p.hair, 25);
+      ctx.beginPath();
+      ctx.ellipse(CX - 3, cy - r + 1, 4, 2, -0.1, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
   }
+}
+
+function drawGlasses(ctx: CanvasRenderingContext2D, dy: number) {
+  const cy = HEAD_CY + dy;
+  ctx.strokeStyle = 'rgba(80,80,100,0.9)';
+  ctx.lineWidth = 1.2;
+  ctx.lineCap = 'round';
+
+  // Left lens
+  ctx.beginPath();
+  ctx.ellipse(CX - 4, cy + 1, 4.5, 3.5, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // Right lens
+  ctx.beginPath();
+  ctx.ellipse(CX + 4, cy + 1, 4.5, 3.5, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // Bridge
+  ctx.beginPath();
+  ctx.moveTo(CX - 0.5, cy + 0.5);
+  ctx.lineTo(CX + 0.5, cy + 0.5);
+  ctx.stroke();
+  // Temple arms
+  ctx.beginPath();
+  ctx.moveTo(CX - 8.5, cy + 0.5);
+  ctx.lineTo(CX - 11, cy + 0.5);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(CX + 8.5, cy + 0.5);
+  ctx.lineTo(CX + 11, cy + 0.5);
+  ctx.stroke();
+
+  // Lens glare
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath();
+  ctx.ellipse(CX - 5, cy - 0.5, 2, 1.5, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(CX + 3, cy - 0.5, 2, 1.5, -0.3, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawCharacterFrame(
@@ -481,6 +608,11 @@ function drawCharacterFrame(
 
   // Hair on top
   drawHair(ctx, p, dy, p.hairStyle);
+
+  // Glasses (drawn after hair so they sit on top)
+  if (p.glasses) {
+    drawGlasses(ctx, dy);
+  }
 
   // Think: draw right arm on top (hand on chin)
   if (isThink) {

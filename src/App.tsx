@@ -86,6 +86,7 @@ const EPHEMERAL_KEYS = new Set<keyof Agent>([
   "currentSessionId",
   "sessionId",
   "collaboratingWith",
+  "position",
 ]);
 
 /**
@@ -154,6 +155,14 @@ export default function App() {
     () => !localStorage.getItem("outworked_onboarding_done"),
   );
   const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTask[]>([]);
+  const [furnitureLayout] = useState<import("./phaser/OfficeScene").FurnitureItem[] | null>(() => {
+    try {
+      const raw = localStorage.getItem("outworked_furniture_layout");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
 
   useEffect(() => {
     async function init() {
@@ -370,6 +379,20 @@ export default function App() {
   const handleAgentClick = useCallback((agent: Agent) => {
     setSelectedAgentId(agent.id);
     setRightPanel("chat");
+  }, []);
+
+  const handleAgentMove = useCallback((agentId: string, x: number, y: number) => {
+    setAgents((prev) =>
+      prev.map((a) =>
+        a.id === agentId ? { ...a, position: { x, y } } : a,
+      ),
+    );
+  }, []);
+
+  const handleFurnitureMove = useCallback((items: import("./phaser/OfficeScene").FurnitureItem[]) => {
+    try {
+      localStorage.setItem("outworked_furniture_layout", JSON.stringify(items));
+    } catch { /* ignore quota errors */ }
   }, []);
 
   function handleAddAgent() {
@@ -812,6 +835,9 @@ export default function App() {
               agents={agents}
               selectedAgentId={selectedAgentId}
               onAgentClick={handleAgentClick}
+              onAgentMove={handleAgentMove}
+              onFurnitureMove={handleFurnitureMove}
+              furnitureLayout={furnitureLayout}
             />
           </Suspense>
           {/* Orchestration complete toast */}
