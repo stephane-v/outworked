@@ -38,8 +38,8 @@ export interface DailyCostSummary extends CostSummary {
 
 // ─── Storage keys ────────────────────────────────────────────────
 
-const LS_RECORDS = 'outworked_cost_records';
-const LS_BUDGETS = 'outworked_cost_budgets';
+const LS_RECORDS = "outworked_cost_records";
+const LS_BUDGETS = "outworked_cost_budgets";
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -58,14 +58,14 @@ function saveRecords(records: CostRecord[]) {
 
 function toDateString(ts: number): string {
   const d = new Date(ts);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 // ─── Cumulative → Delta tracking ─────────────────────────────────
 // Claude Code's total_cost_usd is cumulative per session. We track the
 // last known cumulative value per session so we can record only deltas.
 
-const LS_CUMULATIVE = 'outworked_cost_cumulative';
+const LS_CUMULATIVE = "outworked_cost_cumulative";
 
 interface CumulativeState {
   cost: number;
@@ -77,7 +77,9 @@ function loadCumulative(): Record<string, CumulativeState> {
   try {
     const raw = localStorage.getItem(LS_CUMULATIVE);
     return raw ? JSON.parse(raw) : {};
-  } catch { return {}; }
+  } catch {
+    return {};
+  }
 }
 
 function saveCumulative(state: Record<string, CumulativeState>) {
@@ -105,12 +107,23 @@ export function addCumulativeCost(
   const deltaOutput = Math.max(0, cumulativeOutputTokens - prev.outputTokens);
 
   // Update cumulative state
-  cum[sessionKey] = { cost: cumulativeCost, inputTokens: cumulativeInputTokens, outputTokens: cumulativeOutputTokens };
+  cum[sessionKey] = {
+    cost: cumulativeCost,
+    inputTokens: cumulativeInputTokens,
+    outputTokens: cumulativeOutputTokens,
+  };
   saveCumulative(cum);
 
   if (deltaCost <= 0 && deltaInput <= 0 && deltaOutput <= 0) return null;
 
-  return addCostRecord(agentId, agentName, deltaCost, deltaInput, deltaOutput, sessionKey);
+  return addCostRecord(
+    agentId,
+    agentName,
+    deltaCost,
+    deltaInput,
+    deltaOutput,
+    sessionKey,
+  );
 }
 
 /** Reset cumulative tracking for a session (call when session is cleared). */
@@ -173,7 +186,12 @@ function summarize(records: CostRecord[]): CostSummary {
     totalInputTokens += r.inputTokens;
     totalOutputTokens += r.outputTokens;
   }
-  return { totalCostUsd, totalInputTokens, totalOutputTokens, recordCount: records.length };
+  return {
+    totalCostUsd,
+    totalInputTokens,
+    totalOutputTokens,
+    recordCount: records.length,
+  };
 }
 
 export function getTotalSummary(): CostSummary {
@@ -240,7 +258,11 @@ export function saveBudgets(budgets: AgentBudget[]) {
   localStorage.setItem(LS_BUDGETS, JSON.stringify(budgets));
 }
 
-export function setBudget(agentId: string, dailyLimitUsd?: number, totalLimitUsd?: number) {
+export function setBudget(
+  agentId: string,
+  dailyLimitUsd?: number,
+  totalLimitUsd?: number,
+) {
   const budgets = loadBudgets().filter((b) => b.agentId !== agentId);
   if (dailyLimitUsd !== undefined || totalLimitUsd !== undefined) {
     budgets.push({ agentId, dailyLimitUsd, totalLimitUsd });
@@ -265,7 +287,9 @@ export function checkBudget(agentId: string): BudgetStatus {
 
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
-  const todayRecords = allRecords.filter((r) => r.timestamp >= startOfDay.getTime());
+  const todayRecords = allRecords.filter(
+    (r) => r.timestamp >= startOfDay.getTime(),
+  );
 
   const dailySpent = todayRecords.reduce((s, r) => s + r.costUsd, 0);
   const totalSpent = allRecords.reduce((s, r) => s + r.costUsd, 0);
@@ -276,8 +300,12 @@ export function checkBudget(agentId: string): BudgetStatus {
     dailyLimit: budget?.dailyLimitUsd,
     totalSpent,
     totalLimit: budget?.totalLimitUsd,
-    dailyExceeded: budget?.dailyLimitUsd ? dailySpent >= budget.dailyLimitUsd : false,
-    totalExceeded: budget?.totalLimitUsd ? totalSpent >= budget.totalLimitUsd : false,
+    dailyExceeded: budget?.dailyLimitUsd
+      ? dailySpent >= budget.dailyLimitUsd
+      : false,
+    totalExceeded: budget?.totalLimitUsd
+      ? totalSpent >= budget.totalLimitUsd
+      : false,
   };
 }
 

@@ -1,6 +1,6 @@
-export type ModelId = 'claude-code'
+export type ModelId = "claude-code";
 
-export type Provider = 'claude-code';
+export type Provider = "claude-code";
 
 export interface SkillMetadata {
   emoji?: string;
@@ -30,7 +30,7 @@ export interface AgentSkill {
 }
 
 export interface Message {
-  role: 'user' | 'assistant' | 'system';
+  role: "user" | "assistant" | "system";
   content: string;
   timestamp: number;
 }
@@ -64,40 +64,49 @@ export interface ToolCall {
   result: string;
 }
 
-export type AgentStatus = 'idle' | 'thinking' | 'working' | 'speaking' | 'collaborating' | 'waiting-input' | 'waiting-approval' | 'stuck' | 'background';
+export type AgentStatus =
+  | "idle"
+  | "thinking"
+  | "working"
+  | "speaking"
+  | "collaborating"
+  | "waiting-input"
+  | "waiting-approval"
+  | "stuck"
+  | "background";
 
 export interface BackgroundTask {
   id: string;
   agentId: string;
   agentName: string;
   prompt: string;
-  status: 'running' | 'done' | 'error';
+  status: "running" | "done" | "error";
   startedAt: number;
   completedAt?: number;
   result?: string;
   error?: string;
 }
 
-export type AgentScope = 'user' | 'project';
+export type AgentScope = "user" | "project";
 
 export interface AgentTodo {
   id: string;
   text: string;
-  status: 'pending' | 'in-progress' | 'done' | 'error';
+  status: "pending" | "in-progress" | "done" | "error";
   result?: string;
   error?: string;
   timestamp: number;
 }
 
 export interface McpServerInline {
-  type: 'stdio' | 'http' | 'sse' | 'ws';
+  type: "stdio" | "http" | "sse" | "ws";
   command?: string;
   args?: string[];
   url?: string;
 }
 
 export interface HookCommand {
-  type: 'command';
+  type: "command";
   command: string;
 }
 
@@ -115,9 +124,9 @@ export interface SubagentDef {
   permissionMode?: string;
   maxTurns?: number;
   skills?: string[];
-  memory?: 'user' | 'project' | 'local';
+  memory?: "user" | "project" | "local";
   background?: boolean;
-  isolation?: 'worktree';
+  isolation?: "worktree";
   mcpServers?: (string | Record<string, McpServerInline>)[];
   hooks?: Record<string, HookMatcher[]>;
 }
@@ -167,35 +176,35 @@ export interface ApiKeys {
 }
 
 export const MODELS: { id: ModelId; label: string; provider: Provider }[] = [
-  { id: 'claude-code', label: 'Claude Code (local)', provider: 'claude-code' },
+  { id: "claude-code", label: "Claude Code (local)", provider: "claude-code" },
 ];
 
 export const SPRITE_KEYS = [
-  'char_blue',
-  'char_red',
-  'char_green',
-  'char_yellow',
-  'char_purple',
-  'char_orange',
-  'char_pink',
-  'char_teal',
-  'char_cyan',
-  'char_lime',
-  'char_rose',
-  'char_amber',
+  "char_blue",
+  "char_red",
+  "char_green",
+  "char_yellow",
+  "char_purple",
+  "char_orange",
+  "char_pink",
+  "char_teal",
+  "char_cyan",
+  "char_lime",
+  "char_rose",
+  "char_amber",
 ];
 
 export const AGENT_COLORS = [
-  '#6366f1', // indigo
-  '#ef4444', // red
-  '#22c55e', // green
-  '#eab308', // yellow
-  '#a855f7', // purple
-  '#f97316', // orange
-  '#ec4899', // pink
-  '#14b8a6', // teal
-  '#06b6d4', // cyan
-  '#84cc16', // lime
-  '#f43f5e', // rose
-  '#f59e0b', // amber
+  "#6366f1", // indigo
+  "#ef4444", // red
+  "#22c55e", // green
+  "#eab308", // yellow
+  "#a855f7", // purple
+  "#f97316", // orange
+  "#ec4899", // pink
+  "#14b8a6", // teal
+  "#06b6d4", // cyan
+  "#84cc16", // lime
+  "#f43f5e", // rose
+  "#f59e0b", // amber
 ];

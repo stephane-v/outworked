@@ -1,8 +1,25 @@
-import { Agent, AgentSkill, AgentTodo, ApiKeys, Message, SubagentDef } from './types';
-import { sendMessage, sendMessageWithCost } from './ai';
-import { listFiles, listAllFiles, readFile, writeFile, searchFiles } from './filesystem';
-import { runClaudeCodeAdvanced, ClaudeCodeAdvancedOptions, ClaudeCodeStreamCallbacks } from './terminal';
-import { getWorkspace } from './filesystem';
+import {
+  Agent,
+  AgentSkill,
+  AgentTodo,
+  ApiKeys,
+  Message,
+  SubagentDef,
+} from "./types";
+import { sendMessage, sendMessageWithCost } from "./ai";
+import {
+  listFiles,
+  listAllFiles,
+  readFile,
+  writeFile,
+  searchFiles,
+} from "./filesystem";
+import {
+  runClaudeCodeAdvanced,
+  ClaudeCodeAdvancedOptions,
+  ClaudeCodeStreamCallbacks,
+} from "./terminal";
+import { getWorkspace } from "./filesystem";
 
 export interface NewAgentSpec {
   name: string;
@@ -28,10 +45,9 @@ export interface OrchestrationResult {
   outputTokens?: number;
 }
 
-// If one of the existing directories matches the prompt (e.g. same project name or topic), reuse it as the workingDirectory. 
+// If one of the existing directories matches the prompt (e.g. same project name or topic), reuse it as the workingDirectory.
 // You might be in a situation where the instruction is related to the current directory (e.g. "Improve the recipe-api") — in that case, work in the current directory as the workingDirectory and assign tasks accordingly.
 // Otherwise, pick a short, descriptive slug for a NEW workingDirectory (lowercase, hyphens, no spaces — like "recipe-api" or "landing-page").
-
 
 const ROUTER_SYSTEM = `You are the Office Manager. You receive high-level instructions and break them into tasks assigned to specific employees.
 
@@ -92,15 +108,15 @@ function extractJson(reply: string): Record<string, unknown> {
     jsonStr = codeBlockMatch[1].trim();
   } else {
     // Find the outermost { … }
-    const firstBrace = reply.indexOf('{');
-    const lastBrace = reply.lastIndexOf('}');
+    const firstBrace = reply.indexOf("{");
+    const lastBrace = reply.lastIndexOf("}");
     if (firstBrace !== -1 && lastBrace > firstBrace) {
       jsonStr = reply.slice(firstBrace, lastBrace + 1);
     }
   }
 
   // Strip trailing commas before } or ] (common LLM mistake)
-  jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1');
+  jsonStr = jsonStr.replace(/,\s*([}\]])/g, "$1");
 
   return JSON.parse(jsonStr);
 }
@@ -109,22 +125,23 @@ export async function routeTasks(
   instruction: string,
   agents: Agent[],
   keys: ApiKeys,
-  routerModel: { model: Agent['model']; provider: Agent['provider'] }
+  routerModel: { model: Agent["model"]; provider: Agent["provider"] },
 ): Promise<OrchestrationResult> {
   const employeeList = agents
     .map((a) => `- ${a.name} (${a.role}): ${a.personality.slice(0, 120)}`)
-    .join('\n');
+    .join("\n");
 
   // List top-level directories in the workspace so the router can reuse one
   const existingDirs = await listFiles();
   const dirList = existingDirs
-    .split('\n')
-    .filter((p) => p.endsWith('/'))
-    .map((p) => p.replace(/\/$/, ''))
+    .split("\n")
+    .filter((p) => p.endsWith("/"))
+    .map((p) => p.replace(/\/$/, ""))
     .filter(Boolean);
-  const dirsSection = dirList.length > 0
-    ? `## Existing project directories\n${dirList.map((d) => `- ${d}`).join('\n')}`
-    : '## Existing project directories\n(none)';
+  const dirsSection =
+    dirList.length > 0
+      ? `## Existing project directories\n${dirList.map((d) => `- ${d}`).join("\n")}`
+      : "## Existing project directories\n(none)";
 
   // ─── Selective file reading ──────────────────────────────────────
   // Instead of reading the entire codebase, we:
@@ -137,33 +154,43 @@ export async function routeTasks(
   const allFiles = await listAllFiles();
 
   // Build compact file tree (paths + sizes) — cheap context for the router
-  const fileTree = allFiles
-    .map((f) => `  ${f.path} (${f.size}b)`)
-    .join('\n');
-  const treeSection = allFiles.length > 0
-    ? `## File tree (${allFiles.length} files)\n${fileTree}`
-    : '## File tree\n(empty workspace)';
+  const fileTree = allFiles.map((f) => `  ${f.path} (${f.size}b)`).join("\n");
+  const treeSection =
+    allFiles.length > 0
+      ? `## File tree (${allFiles.length} files)\n${fileTree}`
+      : "## File tree\n(empty workspace)";
 
   // Key config files the router should always see
   const CONFIG_PATTERNS = [
-    'package.json', 'tsconfig.json', 'pyproject.toml', 'Cargo.toml',
-    'go.mod', 'Gemfile', 'requirements.txt', 'Makefile', 'Dockerfile',
-    'docker-compose.yml', 'docker-compose.yaml', '.env.example',
-    'README.md', 'readme.md',
+    "package.json",
+    "tsconfig.json",
+    "pyproject.toml",
+    "Cargo.toml",
+    "go.mod",
+    "Gemfile",
+    "requirements.txt",
+    "Makefile",
+    "Dockerfile",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    ".env.example",
+    "README.md",
+    "readme.md",
   ];
   const configPaths = new Set(
     allFiles
-      .filter((f) => CONFIG_PATTERNS.some((p) => f.path === p || f.path.endsWith('/' + p)))
-      .map((f) => f.path)
+      .filter((f) =>
+        CONFIG_PATTERNS.some((p) => f.path === p || f.path.endsWith("/" + p)),
+      )
+      .map((f) => f.path),
   );
 
   // Extract keywords from the instruction for targeted search
   const keywords = extractKeywords(instruction);
 
   // Search for files matching those keywords
-  const searchResults = keywords.length > 0
-    ? await searchFiles(keywords, 30)
-    : [];
+  const searchResults =
+    keywords.length > 0 ? await searchFiles(keywords, 30) : [];
 
   // Merge config files + search results, deduplicated
   const filesToRead = new Set<string>([...configPaths]);
@@ -180,7 +207,9 @@ export async function routeTasks(
     const meta = allFileMap.get(filePath);
     if (!meta) continue;
     if (meta.size > MAX_FILE_SIZE) {
-      fileContents.push(`### ${meta.path}\n(skipped — ${meta.size} bytes, too large)`);
+      fileContents.push(
+        `### ${meta.path}\n(skipped — ${meta.size} bytes, too large)`,
+      );
       continue;
     }
     if (totalChars + meta.size > MAX_TOTAL_CHARS) {
@@ -188,7 +217,7 @@ export async function routeTasks(
       continue;
     }
     const content = await readFile(meta.path);
-    if (content.startsWith('Error:')) {
+    if (content.startsWith("Error:")) {
       fileContents.push(`### ${meta.path}\n(could not read)`);
       continue;
     }
@@ -196,33 +225,34 @@ export async function routeTasks(
     totalChars += content.length;
   }
 
-  const filesSection = fileContents.length > 0
-    ? `## Relevant files (${fileContents.length} of ${allFiles.length} total)\n${fileContents.join('\n\n')}`
-    : '## Workspace files\n(no relevant files found)';
+  const filesSection =
+    fileContents.length > 0
+      ? `## Relevant files (${fileContents.length} of ${allFiles.length} total)\n${fileContents.join("\n\n")}`
+      : "## Workspace files\n(no relevant files found)";
 
   const prompt = `## Employees\n${employeeList}\n\n${dirsSection}\n\n${treeSection}\n\n${filesSection}\n\n## Instruction\n${instruction}`;
 
   // Create a temporary "router" agent
   const routerAgent: Agent = {
-    id: '__router__',
-    name: 'Office Manager',
-    role: 'Router',
+    id: "__router__",
+    name: "Office Manager",
+    role: "Router",
     personality: ROUTER_SYSTEM,
     model: routerModel.model,
     provider: routerModel.provider,
     skills: [],
     position: { x: 0, y: 0 },
-    status: 'thinking',
-    currentThought: '',
-    spriteKey: '',
+    status: "thinking",
+    currentThought: "",
+    spriteKey: "",
     history: [],
-    color: '#888',
+    color: "#888",
     todos: [],
   };
 
   const MAX_ROUTE_ATTEMPTS = 2;
   let lastErr: unknown;
-  let lastRawReply = '';
+  let lastRawReply = "";
   let routerCost = 0;
   let routerInputTokens = 0;
   let routerOutputTokens = 0;
@@ -253,47 +283,74 @@ export async function routeTasks(
           name: a.name,
           role: a.role,
           personality: a.personality,
-        })
+        }),
       );
 
       const assignments: TaskAssignment[] = (parsed.assignments || []).map(
-        (a: { agentName: string; task: string; subtasks?: string[]; group?: number }) => {
+        (a: {
+          agentName: string;
+          task: string;
+          subtasks?: string[];
+          group?: number;
+        }) => {
           const agent = agents.find(
-            (ag) => ag.name.toLowerCase() === a.agentName.toLowerCase()
+            (ag) => ag.name.toLowerCase() === a.agentName.toLowerCase(),
           );
           return {
-            agentId: agent?.id ?? '', // empty string means it's a new agent — resolved after creation
+            agentId: agent?.id ?? "", // empty string means it's a new agent — resolved after creation
             agentName: a.agentName,
             task: a.task,
-            subtasks: Array.isArray(a.subtasks) && a.subtasks.length > 0
-              ? a.subtasks.map(String)
-              : [a.task], // fallback: use the whole task as a single subtask
-            group: typeof a.group === 'number' ? a.group : 1,
+            subtasks:
+              Array.isArray(a.subtasks) && a.subtasks.length > 0
+                ? a.subtasks.map(String)
+                : [a.task], // fallback: use the whole task as a single subtask
+            group: typeof a.group === "number" ? a.group : 1,
           };
-        }
+        },
       );
 
       // Ensure the working directory exists
-      const workDir = sanitizeSlug(parsed.workingDirectory || 'project');
+      const workDir = sanitizeSlug(parsed.workingDirectory || "project");
       await ensureWorkingDirectory(workDir);
 
-      return { assignments, plan: parsed.plan || '', newAgents, workingDirectory: workDir, cost: routerCost, inputTokens: routerInputTokens, outputTokens: routerOutputTokens };
+      return {
+        assignments,
+        plan: parsed.plan || "",
+        newAgents,
+        workingDirectory: workDir,
+        cost: routerCost,
+        inputTokens: routerInputTokens,
+        outputTokens: routerOutputTokens,
+      };
     } catch (err) {
       lastErr = err;
-      console.warn(`[orchestrator] Route attempt ${attempt + 1} failed:`, err, '\nRaw reply:', reply.slice(0, 500));
+      console.warn(
+        `[orchestrator] Route attempt ${attempt + 1} failed:`,
+        err,
+        "\nRaw reply:",
+        reply.slice(0, 500),
+      );
       // Loop will retry
     }
   }
 
   // All attempts failed — fallback: assign the whole thing to the first agent
-  console.warn('[orchestrator] All route attempts failed. Using fallback.');
-  const fallbackDir = 'project';
+  console.warn("[orchestrator] All route attempts failed. Using fallback.");
+  const fallbackDir = "project";
   await ensureWorkingDirectory(fallbackDir);
   return {
-    plan: 'Could not parse routing — assigning to first available employee.',
-    assignments: agents.length > 0
-      ? [{ agentId: agents[0].id, agentName: agents[0].name, task: instruction, subtasks: [instruction] }]
-      : [],
+    plan: "Could not parse routing — assigning to first available employee.",
+    assignments:
+      agents.length > 0
+        ? [
+            {
+              agentId: agents[0].id,
+              agentName: agents[0].name,
+              task: instruction,
+              subtasks: [instruction],
+            },
+          ]
+        : [],
     newAgents: [],
     workingDirectory: fallbackDir,
     cost: routerCost,
@@ -308,25 +365,134 @@ export async function routeTasks(
  */
 function extractKeywords(instruction: string): string[] {
   const STOP_WORDS = new Set([
-    'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-    'should', 'may', 'might', 'can', 'shall', 'to', 'of', 'in', 'for',
-    'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during',
-    'before', 'after', 'above', 'below', 'between', 'out', 'off', 'over',
-    'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when',
-    'where', 'why', 'how', 'all', 'each', 'every', 'both', 'few', 'more',
-    'most', 'other', 'some', 'such', 'no', 'not', 'only', 'same', 'so',
-    'than', 'too', 'very', 'just', 'because', 'but', 'and', 'or', 'if',
-    'while', 'about', 'up', 'this', 'that', 'these', 'those', 'it', 'its',
-    'i', 'me', 'my', 'we', 'our', 'you', 'your', 'he', 'she', 'they',
-    'them', 'what', 'which', 'who', 'whom', 'make', 'create', 'build',
-    'add', 'update', 'change', 'fix', 'implement', 'write', 'use', 'get',
-    'set', 'new', 'also', 'like', 'need', 'want', 'please', 'help',
+    "a",
+    "an",
+    "the",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "could",
+    "should",
+    "may",
+    "might",
+    "can",
+    "shall",
+    "to",
+    "of",
+    "in",
+    "for",
+    "on",
+    "with",
+    "at",
+    "by",
+    "from",
+    "as",
+    "into",
+    "through",
+    "during",
+    "before",
+    "after",
+    "above",
+    "below",
+    "between",
+    "out",
+    "off",
+    "over",
+    "under",
+    "again",
+    "further",
+    "then",
+    "once",
+    "here",
+    "there",
+    "when",
+    "where",
+    "why",
+    "how",
+    "all",
+    "each",
+    "every",
+    "both",
+    "few",
+    "more",
+    "most",
+    "other",
+    "some",
+    "such",
+    "no",
+    "not",
+    "only",
+    "same",
+    "so",
+    "than",
+    "too",
+    "very",
+    "just",
+    "because",
+    "but",
+    "and",
+    "or",
+    "if",
+    "while",
+    "about",
+    "up",
+    "this",
+    "that",
+    "these",
+    "those",
+    "it",
+    "its",
+    "i",
+    "me",
+    "my",
+    "we",
+    "our",
+    "you",
+    "your",
+    "he",
+    "she",
+    "they",
+    "them",
+    "what",
+    "which",
+    "who",
+    "whom",
+    "make",
+    "create",
+    "build",
+    "add",
+    "update",
+    "change",
+    "fix",
+    "implement",
+    "write",
+    "use",
+    "get",
+    "set",
+    "new",
+    "also",
+    "like",
+    "need",
+    "want",
+    "please",
+    "help",
   ]);
 
   // Extract words, camelCase splits, and quoted/path-like terms
   const words = instruction
-    .replace(/[^a-zA-Z0-9_./\-]/g, ' ')
+    .replace(/[^a-zA-Z0-9_./\-]/g, " ")
     .split(/\s+/)
     .filter(Boolean);
 
@@ -336,7 +502,7 @@ function extractKeywords(instruction: string): string[] {
   for (const word of words) {
     // Split camelCase: "userProfile" → ["user", "profile"]
     const parts = word
-      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
       .toLowerCase()
       .split(/\s+/);
 
@@ -350,7 +516,13 @@ function extractKeywords(instruction: string): string[] {
 
     // Also keep the original word if it looks like a path or compound term
     const lower = word.toLowerCase();
-    if ((word.includes('/') || word.includes('.') || word.includes('-') || word.includes('_')) && !seen.has(lower)) {
+    if (
+      (word.includes("/") ||
+        word.includes(".") ||
+        word.includes("-") ||
+        word.includes("_")) &&
+      !seen.has(lower)
+    ) {
       seen.add(lower);
       keywords.push(lower);
     }
@@ -364,12 +536,14 @@ function extractKeywords(instruction: string): string[] {
  * Sanitise a router-suggested directory name into a safe slug.
  */
 function sanitizeSlug(raw: string): string {
-  return raw
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 64) || 'project';
+  return (
+    raw
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 64) || "project"
+  );
 }
 
 /**
@@ -379,9 +553,12 @@ function sanitizeSlug(raw: string): string {
 async function ensureWorkingDirectory(dir: string): Promise<void> {
   const listing = await listFiles(dir);
   // If the directory already has files, it exists — nothing to do
-  if (!listing.startsWith('No files')) return;
+  if (!listing.startsWith("No files")) return;
   // Create an empty marker so the directory is created
-  await writeFile(`${dir}/.outworked`, `# Working directory created ${new Date().toISOString()}\n`);
+  await writeFile(
+    `${dir}/.outworked`,
+    `# Working directory created ${new Date().toISOString()}\n`,
+  );
 }
 
 /**
@@ -395,17 +572,26 @@ export async function executeTask(
   signal?: AbortSignal,
   skills?: AgentSkill[],
   workingDirectory?: string,
-  customToolExecutor?: (name: string, args: Record<string, unknown>) => Promise<string | null>,
+  customToolExecutor?: (
+    name: string,
+    args: Record<string, unknown>,
+  ) => Promise<string | null>,
   colleagues?: { name: string; role: string }[],
-): Promise<{ agent: Agent; reply: string; cost?: number; inputTokens?: number; outputTokens?: number }> {
+): Promise<{
+  agent: Agent;
+  reply: string;
+  cost?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+}> {
   // Build a strong system-level directive so agents respect the working directory
   const extraSystemPrompt = workingDirectory
     ? `\n\n## IMPORTANT — Project Directory\nThis project's root is "${workingDirectory}/". You MUST:\n- Prefix EVERY file path with "${workingDirectory}/" (e.g. "${workingDirectory}/src/index.js", NOT "src/index.js")\n- Pass cwd: "${workingDirectory}" to every run_command call\n- NEVER write files to paths outside "${workingDirectory}/"\nViolating this will break the project structure.`
     : undefined;
 
   const userMsg: Message = {
-    role: 'user',
-    content: `[OFFICE TASK] ${task}\n\nComplete each step in order. If you need to write code, include it in code blocks. Explain what you did briefly.${workingDirectory ? ` Remember: all files go under ${workingDirectory}/.` : ''}`,
+    role: "user",
+    content: `[OFFICE TASK] ${task}\n\nComplete each step in order. If you need to write code, include it in code blocks. Explain what you did briefly.${workingDirectory ? ` Remember: all files go under ${workingDirectory}/.` : ""}`,
     timestamp: Date.now(),
   };
 
@@ -418,8 +604,8 @@ export async function executeTask(
   const updatedAgent: Agent = {
     ...agent,
     history: [...trimmedHistory, userMsg],
-    status: 'working',
-    currentThought: 'Working on task...',
+    status: "working",
+    currentThought: "Working on task...",
   };
 
   const result = await sendMessageWithCost(
@@ -432,7 +618,7 @@ export async function executeTask(
   );
 
   const assistantMsg: Message = {
-    role: 'assistant',
+    role: "assistant",
     content: result.text,
     timestamp: Date.now(),
   };
@@ -445,8 +631,9 @@ export async function executeTask(
       history: agent.sessionId
         ? [userMsg, assistantMsg]
         : [...updatedAgent.history, assistantMsg],
-      status: 'idle',
-      currentThought: result.text.slice(0, 80) + (result.text.length > 80 ? '...' : ''),
+      status: "idle",
+      currentThought:
+        result.text.slice(0, 80) + (result.text.length > 80 ? "..." : ""),
     },
     reply: result.text,
     cost: result.cost,
@@ -471,38 +658,63 @@ export async function generateTodoList(
     history: [],
   };
 
-  const reply = await sendMessage(tempAgent, prompt, keys, () => {}, undefined, { useTools: false, skills });
+  const reply = await sendMessage(
+    tempAgent,
+    prompt,
+    keys,
+    () => {},
+    undefined,
+    { useTools: false, skills },
+  );
 
   try {
-    const jsonStr = reply.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+    const jsonStr = reply
+      .replace(/```json?\n?/g, "")
+      .replace(/```/g, "")
+      .trim();
     const items: string[] = JSON.parse(jsonStr);
-    if (!Array.isArray(items)) throw new Error('Not an array');
+    if (!Array.isArray(items)) throw new Error("Not an array");
     return items.map((text) => ({
       id: crypto.randomUUID(),
-      text: typeof text === 'string' ? text : String(text),
-      status: 'pending' as const,
+      text: typeof text === "string" ? text : String(text),
+      status: "pending" as const,
       timestamp: Date.now(),
     }));
   } catch {
     // Fallback: single todo with the whole task
-    return [{
-      id: crypto.randomUUID(),
-      text: task,
-      status: 'pending' as const,
-      timestamp: Date.now(),
-    }];
+    return [
+      {
+        id: crypto.randomUUID(),
+        text: task,
+        status: "pending" as const,
+        timestamp: Date.now(),
+      },
+    ];
   }
 }
 
 // ─── Claude Code Agent Teams orchestration ────────────────────
 
 export interface AgentTeamCallbacks {
-  onTeamEvent?: (event: { agentName?: string; type: string; text?: string }) => void;
-  onAgentStatus?: (agentName: string, status: 'working' | 'done' | 'waiting-input' | 'waiting-approval' | 'stuck', thought?: string) => void;
+  onTeamEvent?: (event: {
+    agentName?: string;
+    type: string;
+    text?: string;
+  }) => void;
+  onAgentStatus?: (
+    agentName: string,
+    status: "working" | "done" | "waiting-input" | "waiting-approval" | "stuck",
+    thought?: string,
+  ) => void;
   /** Called when the boss delegates to an agent name not in the roster — allows dynamic creation */
   onNewAgent?: (agentName: string, description: string) => void;
   /** Called when a permission request event is received for the team */
-  onPermissionRequest?: (agentName: string | undefined, tool: string, description: string, reqId?: number) => void;
+  onPermissionRequest?: (
+    agentName: string | undefined,
+    tool: string,
+    description: string,
+    reqId?: number,
+  ) => void;
 }
 
 /**
@@ -521,7 +733,13 @@ export async function routeTasksViaClaudeCode(
   onDebug?: (line: string) => void,
   sessionId?: string,
   enableAgentTeams?: boolean,
-): Promise<{ text: string; sessionId?: string; cost?: number; inputTokens?: number; outputTokens?: number }> {
+): Promise<{
+  text: string;
+  sessionId?: string;
+  cost?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+}> {
   const workspace = await getWorkspace();
 
   // Build subagent definitions from all subagent-backed employees
@@ -546,23 +764,29 @@ export async function routeTasksViaClaudeCode(
 
   // Build a system prompt that tells the boss to delegate to its team
   const agentNames = Object.keys(agentDefs);
-  const agentRoster = agentNames.map(name => {
-    const def = agentDefs[name];
-    return `- **${name}** (use agent="${name}"): ${def.description}${def.prompt ? ` — ${def.prompt.slice(0, 150)}` : ''}`;
-  }).join('\n');
+  const agentRoster = agentNames
+    .map((name) => {
+      const def = agentDefs[name];
+      return `- **${name}** (use agent="${name}"): ${def.description}${def.prompt ? ` — ${def.prompt.slice(0, 150)}` : ""}`;
+    })
+    .join("\n");
 
   const hasTeam = agentNames.length > 0;
 
   const systemPrompt = `You are the Boss. Delegate ALL tasks to employees via the Agent tool. NEVER do implementation yourself.
 
 ## Team
-${agentRoster || '(No employees yet)'}
+${agentRoster || "(No employees yet)"}
 
 ## Rules
-${hasTeam ? `- Delegate ALL work. NEVER write code, edit files, or run commands yourself.
+${
+  hasTeam
+    ? `- Delegate ALL work. NEVER write code, edit files, or run commands yourself.
 - Break complex tasks into subtasks and delegate to the right employee.
 - Delegate to multiple agents in parallel when subtasks are independent.
-- After delegations complete, provide a brief summary.` : `- No employees yet. Tell the user to hire employees first.`}`;
+- After delegations complete, provide a brief summary.`
+    : `- No employees yet. Tell the user to hire employees first.`
+}`;
 
   const options: ClaudeCodeAdvancedOptions = {
     prompt: instruction,
@@ -575,15 +799,20 @@ ${hasTeam ? `- Delegate ALL work. NEVER write code, edit files, or run commands 
     // When permission prompts are enabled, 'default' mode routes unapproved
     // tools through the canUseTool callback which prompts the user via the UI.
     // When disabled, 'acceptEdits' auto-approves most operations.
-    permissionMode: (typeof localStorage !== 'undefined' && localStorage.getItem('outworked_permission_prompts') !== '0')
-      ? 'default' : 'acceptEdits',
+    permissionMode:
+      typeof localStorage !== "undefined" &&
+      localStorage.getItem("outworked_permission_prompts") !== "0"
+        ? "default"
+        : "acceptEdits",
     continueSession: !!sessionId,
     resumeSessionId: sessionId,
   };
 
-  onDebug?.(`[orchestrator] options: ${JSON.stringify({ ...options, agents: Object.keys(agentDefs) })}`);
+  onDebug?.(
+    `[orchestrator] options: ${JSON.stringify({ ...options, agents: Object.keys(agentDefs) })}`,
+  );
 
-  let fullText = '';
+  let fullText = "";
   // Track time of last meaningful event per agent to detect stuck agents
   const agentLastActivity = new Map<string, number>();
   const STUCK_TIMEOUT_MS = 120_000; // 2 minutes of silence = stuck
@@ -592,7 +821,7 @@ ${hasTeam ? `- Delegate ALL work. NEVER write code, edit files, or run commands 
     const now = Date.now();
     for (const [name, ts] of agentLastActivity) {
       if (now - ts > STUCK_TIMEOUT_MS) {
-        callbacks.onAgentStatus?.(name, 'stuck', 'No progress for 2 minutes');
+        callbacks.onAgentStatus?.(name, "stuck", "No progress for 2 minutes");
       }
     }
   }, 15_000);
@@ -601,58 +830,104 @@ ${hasTeam ? `- Delegate ALL work. NEVER write code, edit files, or run commands 
   let streamCallbacks: ClaudeCodeStreamCallbacks = {
     onTextDelta: (text) => {
       fullText += text;
-      callbacks.onTeamEvent?.({ type: 'text', text });
+      callbacks.onTeamEvent?.({ type: "text", text });
     },
     onToolUse: (name, input) => {
-      onDebug?.(`[event] tool_use: ${name} ${JSON.stringify(input).slice(0, 300)}`);
-      if (name === 'Agent') {
-        const agentName = (input.agent ?? input.name ?? '') as string;
-        const taskDesc = ((input.prompt ?? input.task ?? '') as string).slice(0, 80);
-        if (agentName) agentLastActivity.set(agentName.toLowerCase(), Date.now());
-        if (agentName && !knownNames.has(agentName.toLowerCase()) && !createdAgents.has(agentName.toLowerCase())) {
+      onDebug?.(
+        `[event] tool_use: ${name} ${JSON.stringify(input).slice(0, 300)}`,
+      );
+      if (name === "Agent") {
+        const agentName = (input.agent ?? input.name ?? "") as string;
+        const taskDesc = ((input.prompt ?? input.task ?? "") as string).slice(
+          0,
+          80,
+        );
+        if (agentName)
+          agentLastActivity.set(agentName.toLowerCase(), Date.now());
+        if (
+          agentName &&
+          !knownNames.has(agentName.toLowerCase()) &&
+          !createdAgents.has(agentName.toLowerCase())
+        ) {
           createdAgents.add(agentName.toLowerCase());
-          const desc = (input.description ?? input.role ?? taskDesc ?? 'Specialist') as string;
+          const desc = (input.description ??
+            input.role ??
+            taskDesc ??
+            "Specialist") as string;
           callbacks.onNewAgent?.(agentName, desc);
         }
-        callbacks.onAgentStatus?.(agentName, 'working', `Working on: ${taskDesc}`);
+        callbacks.onAgentStatus?.(
+          agentName,
+          "working",
+          `Working on: ${taskDesc}`,
+        );
       }
-      callbacks.onTeamEvent?.({ type: 'tool_use', agentName: (input.agent ?? '') as string, text: `${name}: ${JSON.stringify(input).slice(0, 200)}` });
+      callbacks.onTeamEvent?.({
+        type: "tool_use",
+        agentName: (input.agent ?? "") as string,
+        text: `${name}: ${JSON.stringify(input).slice(0, 200)}`,
+      });
     },
     onEvent: (event) => {
       onDebug?.(`[raw] ${JSON.stringify(event).slice(0, 500)}`);
       callbacks.onTeamEvent?.({ type: event.type });
-      if (event.type === 'permission_request') {
+      if (event.type === "permission_request") {
         const ev = event as unknown as Record<string, unknown>;
-        const toolName = ev.tool_name as string
-          || ((ev.tool as Record<string, unknown>)?.name as string)
-          || 'unknown';
-        const desc = ev.description as string
-          || ev.message as string
-          || `Wants to use ${toolName}`;
+        const toolName =
+          (ev.tool_name as string) ||
+          ((ev.tool as Record<string, unknown>)?.name as string) ||
+          "unknown";
+        const desc =
+          (ev.description as string) ||
+          (ev.message as string) ||
+          `Wants to use ${toolName}`;
         const agentName = ev.agent_name as string | undefined;
         callbacks.onPermissionRequest?.(agentName, toolName, desc);
         if (agentName) {
-          callbacks.onAgentStatus?.(agentName, 'waiting-approval', `Needs approval: ${toolName}`);
+          callbacks.onAgentStatus?.(
+            agentName,
+            "waiting-approval",
+            `Needs approval: ${toolName}`,
+          );
         }
       }
     },
-    onStderr: onDebug ? (text) => {
-      onDebug(`[stderr] ${text.trim()}`);
-    } : undefined,
+    onStderr: onDebug
+      ? (text) => {
+          onDebug(`[stderr] ${text.trim()}`);
+        }
+      : undefined,
     onPermissionRequest: (request) => {
-      callbacks.onPermissionRequest?.(undefined, request.tool, request.description, request.reqId);
+      callbacks.onPermissionRequest?.(
+        undefined,
+        request.tool,
+        request.description,
+        request.reqId,
+      );
     },
   };
 
   try {
-    const result = await runClaudeCodeAdvanced(options, streamCallbacks, signal);
-    return { text: result.result || fullText, sessionId: result.sessionId, cost: result.cost, inputTokens: result.usage?.input_tokens, outputTokens: result.usage?.output_tokens };
+    const result = await runClaudeCodeAdvanced(
+      options,
+      streamCallbacks,
+      signal,
+    );
+    return {
+      text: result.result || fullText,
+      sessionId: result.sessionId,
+      cost: result.cost,
+      inputTokens: result.usage?.input_tokens,
+      outputTokens: result.usage?.output_tokens,
+    };
   } catch (err) {
     // If resume failed because the session no longer exists, retry as a fresh session
-    const msg = (err as Error)?.message || '';
+    const msg = (err as Error)?.message || "";
     if (sessionId && /no conversation found|session.*not found/i.test(msg)) {
-      onDebug?.(`[orchestrator] Stale session ${sessionId}, retrying as new session`);
-      fullText = '';
+      onDebug?.(
+        `[orchestrator] Stale session ${sessionId}, retrying as new session`,
+      );
+      fullText = "";
       const freshOptions: ClaudeCodeAdvancedOptions = {
         ...options,
         systemPrompt: systemPrompt,
@@ -660,8 +935,18 @@ ${hasTeam ? `- Delegate ALL work. NEVER write code, edit files, or run commands 
         continueSession: false,
         resumeSessionId: undefined,
       };
-      const result = await runClaudeCodeAdvanced(freshOptions, streamCallbacks, signal);
-      return { text: result.result || fullText, sessionId: result.sessionId, cost: result.cost, inputTokens: result.usage?.input_tokens, outputTokens: result.usage?.output_tokens };
+      const result = await runClaudeCodeAdvanced(
+        freshOptions,
+        streamCallbacks,
+        signal,
+      );
+      return {
+        text: result.result || fullText,
+        sessionId: result.sessionId,
+        cost: result.cost,
+        inputTokens: result.usage?.input_tokens,
+        outputTokens: result.usage?.output_tokens,
+      };
     }
     throw err;
   } finally {

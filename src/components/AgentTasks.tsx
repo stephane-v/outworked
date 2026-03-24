@@ -1,35 +1,37 @@
-import { Agent, AgentTodo } from '../lib/types';
+import { Agent, AgentTodo } from "../lib/types";
 
 interface AgentTasksProps {
   agent: Agent | null;
   onUpdateAgent: (agent: Agent) => void;
 }
 
-const STATUS_ICON: Record<AgentTodo['status'], string> = {
-  pending: '○',
-  'in-progress': '⏳',
-  done: '✓',
-  error: '✗',
+const STATUS_ICON: Record<AgentTodo["status"], string> = {
+  pending: "○",
+  "in-progress": "⏳",
+  done: "✓",
+  error: "✗",
 };
 
-const STATUS_COLOR: Record<AgentTodo['status'], string> = {
-  pending: 'text-slate-400',
-  'in-progress': 'text-yellow-400',
-  done: 'text-green-400',
-  error: 'text-red-400',
+const STATUS_COLOR: Record<AgentTodo["status"], string> = {
+  pending: "text-slate-400",
+  "in-progress": "text-yellow-400",
+  done: "text-green-400",
+  error: "text-red-400",
 };
 
 export default function AgentTasks({ agent, onUpdateAgent }: AgentTasksProps) {
   if (!agent) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-[11px] font-pixel text-slate-400">Select an employee to view their tasks</p>
+        <p className="text-[11px] font-pixel text-slate-400">
+          Select an employee to view their tasks
+        </p>
       </div>
     );
   }
 
   const todos = agent.todos ?? [];
-  const doneCount = todos.filter((t) => t.status === 'done').length;
+  const doneCount = todos.filter((t) => t.status === "done").length;
 
   function clearTodos() {
     onUpdateAgent({ ...agent!, todos: [] });
@@ -38,7 +40,7 @@ export default function AgentTasks({ agent, onUpdateAgent }: AgentTasksProps) {
   function clearDone() {
     onUpdateAgent({
       ...agent!,
-      todos: todos.filter((t) => t.status !== 'done'),
+      todos: todos.filter((t) => t.status !== "done"),
     });
   }
 
@@ -89,18 +91,18 @@ export default function AgentTasks({ agent, onUpdateAgent }: AgentTasksProps) {
           <div
             key={todo.id}
             className={`flex items-start gap-2 px-2 py-1.5 rounded ${
-              todo.status === 'done'
-                ? 'bg-green-900/10'
-                : todo.status === 'in-progress'
-                ? 'bg-yellow-900/15'
-                : todo.status === 'error'
-                ? 'bg-red-900/15'
-                : 'bg-slate-900/30'
+              todo.status === "done"
+                ? "bg-green-900/10"
+                : todo.status === "in-progress"
+                  ? "bg-yellow-900/15"
+                  : todo.status === "error"
+                    ? "bg-red-900/15"
+                    : "bg-slate-900/30"
             }`}
           >
             <span
               className={`text-[12px] font-mono shrink-0 mt-0.5 ${STATUS_COLOR[todo.status]} ${
-                todo.status === 'in-progress' ? 'animate-pulse' : ''
+                todo.status === "in-progress" ? "animate-pulse" : ""
               }`}
             >
               {STATUS_ICON[todo.status]}
@@ -108,13 +110,17 @@ export default function AgentTasks({ agent, onUpdateAgent }: AgentTasksProps) {
             <div className="flex-1 min-w-0">
               <p
                 className={`text-[11px] font-mono break-words ${
-                  todo.status === 'done' ? 'text-slate-400 line-through' : 'text-slate-200'
+                  todo.status === "done"
+                    ? "text-slate-400 line-through"
+                    : "text-slate-200"
                 }`}
               >
                 {todo.text}
               </p>
               {todo.error && (
-                <p className="text-[12px] font-mono text-red-400 mt-0.5">{todo.error}</p>
+                <p className="text-[12px] font-mono text-red-400 mt-0.5">
+                  {todo.error}
+                </p>
               )}
               {todo.result && (
                 <details className="mt-0.5">

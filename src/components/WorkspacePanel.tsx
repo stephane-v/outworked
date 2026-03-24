@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { listAllFiles, FileMeta } from '../lib/filesystem';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { listAllFiles, FileMeta } from "../lib/filesystem";
 import {
   isElectron,
   watchWorkspace,
@@ -10,13 +10,13 @@ import {
   gitDiff,
   gitDiffStat,
   GitStatusFile,
-} from '../lib/terminal';
+} from "../lib/terminal";
 
 interface WorkspacePanelProps {
   workspaceDir: string | null;
 }
 
-type TabMode = 'files' | 'changes';
+type TabMode = "files" | "changes";
 
 // ─── Tree helpers ────────────────────────────────────────────────
 
@@ -29,17 +29,22 @@ interface TreeNode {
   gitStatus?: string; // M, A, D, ??, etc.
 }
 
-function buildTree(files: FileMeta[], gitFiles: Map<string, string>): TreeNode[] {
-  const root: TreeNode = { name: '', path: '', isDir: true, children: [] };
+function buildTree(
+  files: FileMeta[],
+  gitFiles: Map<string, string>,
+): TreeNode[] {
+  const root: TreeNode = { name: "", path: "", isDir: true, children: [] };
 
   for (const file of files) {
-    const parts = file.path.replace(/^\/+/, '').split('/');
+    const parts = file.path.replace(/^\/+/, "").split("/");
     let current = root;
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
       const isLast = i === parts.length - 1;
-      const childPath = parts.slice(0, i + 1).join('/');
-      let child = current.children.find(c => c.name === part && c.isDir === !isLast);
+      const childPath = parts.slice(0, i + 1).join("/");
+      let child = current.children.find(
+        (c) => c.name === part && c.isDir === !isLast,
+      );
       if (!child) {
         child = {
           name: part,
@@ -72,7 +77,7 @@ function buildTree(files: FileMeta[], gitFiles: Map<string, string>): TreeNode[]
       if (node.isDir) {
         const childHasChanges = propagateStatus(node.children);
         if (childHasChanges) {
-          node.gitStatus = 'M'; // directory contains changes
+          node.gitStatus = "M"; // directory contains changes
           hasChanges = true;
         }
       } else if (node.gitStatus) {
@@ -87,50 +92,76 @@ function buildTree(files: FileMeta[], gitFiles: Map<string, string>): TreeNode[]
 }
 
 function fileIcon(name: string): string {
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
   const map: Record<string, string> = {
-    ts: '🟦', tsx: '⚛️', js: '🟨', jsx: '⚛️',
-    json: '📋', md: '📝', css: '🎨', html: '🌐',
-    py: '🐍', sh: '⚙️', yml: '📄', yaml: '📄',
-    txt: '📄', toml: '📄', lock: '🔒', env: '🔑',
+    ts: "🟦",
+    tsx: "⚛️",
+    js: "🟨",
+    jsx: "⚛️",
+    json: "📋",
+    md: "📝",
+    css: "🎨",
+    html: "🌐",
+    py: "🐍",
+    sh: "⚙️",
+    yml: "📄",
+    yaml: "📄",
+    txt: "📄",
+    toml: "📄",
+    lock: "🔒",
+    env: "🔑",
   };
-  return map[ext] ?? '📄';
+  return map[ext] ?? "📄";
 }
 
 function statusBadge(status: string | undefined): string {
-  if (!status) return '';
+  if (!status) return "";
   switch (status) {
-    case 'M': return 'M';
-    case 'A': return 'A';
-    case 'D': return 'D';
-    case '??': return 'U';
-    case 'R': return 'R';
-    default: return status;
+    case "M":
+      return "M";
+    case "A":
+      return "A";
+    case "D":
+      return "D";
+    case "??":
+      return "U";
+    case "R":
+      return "R";
+    default:
+      return status;
   }
 }
 
 function statusColor(status: string | undefined): string {
-  if (!status) return '';
+  if (!status) return "";
   switch (status) {
-    case 'M': return 'text-amber-400';
-    case 'A': return 'text-green-400';
-    case 'D': return 'text-red-400';
-    case '??': return 'text-emerald-400';
-    case 'R': return 'text-blue-400';
-    default: return 'text-slate-400';
+    case "M":
+      return "text-amber-400";
+    case "A":
+      return "text-green-400";
+    case "D":
+      return "text-red-400";
+    case "??":
+      return "text-emerald-400";
+    case "R":
+      return "text-blue-400";
+    default:
+      return "text-slate-400";
   }
 }
 
 export default function WorkspacePanel({ workspaceDir }: WorkspacePanelProps) {
-  const [mode, setMode] = useState<TabMode>('files');
+  const [mode, setMode] = useState<TabMode>("files");
   const [files, setFiles] = useState<FileMeta[]>([]);
   const [gitFiles, setGitFiles] = useState<Map<string, string>>(new Map());
   const [changedFiles, setChangedFiles] = useState<GitStatusFile[]>([]);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null);
-  const [diffContent, setDiffContent] = useState<string>('');
-  const [diffStatContent, setDiffStatContent] = useState<string>('');
-  const [recentChanges, setRecentChanges] = useState<{ file: string; type: string; time: number }[]>([]);
+  const [diffContent, setDiffContent] = useState<string>("");
+  const [diffStatContent, setDiffStatContent] = useState<string>("");
+  const [recentChanges, setRecentChanges] = useState<
+    { file: string; type: string; time: number }[]
+  >([]);
   const [loading, setLoading] = useState(false);
   const isRepoRef = useRef<boolean | null>(null);
   const mountedRef = useRef(true);
@@ -144,7 +175,8 @@ export default function WorkspacePanel({ workspaceDir }: WorkspacePanelProps) {
   // Load git status
   const refreshGitStatus = useCallback(async () => {
     if (!workspaceDir) return;
-    if (isRepoRef.current === null) isRepoRef.current = await gitIsRepo(workspaceDir);
+    if (isRepoRef.current === null)
+      isRepoRef.current = await gitIsRepo(workspaceDir);
     if (!isRepoRef.current) return;
     const result = await gitStatus(workspaceDir);
     if (!mountedRef.current) return;
@@ -161,11 +193,12 @@ export default function WorkspacePanel({ workspaceDir }: WorkspacePanelProps) {
   // Load diff stat
   const refreshDiffStat = useCallback(async () => {
     if (!workspaceDir) return;
-    if (isRepoRef.current === null) isRepoRef.current = await gitIsRepo(workspaceDir);
+    if (isRepoRef.current === null)
+      isRepoRef.current = await gitIsRepo(workspaceDir);
     if (!isRepoRef.current) return;
     const result = await gitDiffStat(workspaceDir);
     if (mountedRef.current && result.ok) {
-      setDiffStatContent(result.stat || '');
+      setDiffStatContent(result.stat || "");
     }
   }, [workspaceDir]);
 
@@ -201,8 +234,11 @@ export default function WorkspacePanel({ workspaceDir }: WorkspacePanelProps) {
   useEffect(() => {
     if (!isElectron()) return;
     const unsub = onFileChanged((data) => {
-      setRecentChanges(prev => {
-        const next = [{ file: data.filename, type: data.eventType, time: Date.now() }, ...prev];
+      setRecentChanges((prev) => {
+        const next = [
+          { file: data.filename, type: data.eventType, time: Date.now() },
+          ...prev,
+        ];
         return next.slice(0, 50); // keep last 50
       });
     });
@@ -210,7 +246,7 @@ export default function WorkspacePanel({ workspaceDir }: WorkspacePanelProps) {
   }, []);
 
   const toggleDir = useCallback((path: string) => {
-    setExpandedDirs(prev => {
+    setExpandedDirs((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
       else next.add(path);
@@ -219,16 +255,23 @@ export default function WorkspacePanel({ workspaceDir }: WorkspacePanelProps) {
   }, []);
 
   // Load diff for a specific file
-  const loadFileDiff = useCallback(async (filepath: string) => {
-    if (!workspaceDir) return;
-    setLoading(true);
-    setSelectedDiffFile(filepath);
-    const result = await gitDiff(workspaceDir, undefined, filepath);
-    if (mountedRef.current) {
-      setDiffContent(result.ok ? (result.diff || '(no diff — file may be untracked)') : (result.error || 'Error loading diff'));
-      setLoading(false);
-    }
-  }, [workspaceDir]);
+  const loadFileDiff = useCallback(
+    async (filepath: string) => {
+      if (!workspaceDir) return;
+      setLoading(true);
+      setSelectedDiffFile(filepath);
+      const result = await gitDiff(workspaceDir, undefined, filepath);
+      if (mountedRef.current) {
+        setDiffContent(
+          result.ok
+            ? result.diff || "(no diff — file may be untracked)"
+            : result.error || "Error loading diff",
+        );
+        setLoading(false);
+      }
+    },
+    [workspaceDir],
+  );
 
   const tree = buildTree(files, gitFiles);
 
@@ -237,21 +280,21 @@ export default function WorkspacePanel({ workspaceDir }: WorkspacePanelProps) {
       {/* Sub-tabs */}
       <div className="flex border-b border-slate-700 bg-slate-900">
         <button
-          onClick={() => setMode('files')}
-          className={`flex-1 py-1.5 text-[11px] font-pixel transition-colors ${mode === 'files' ? 'text-green-400 border-b-2 border-green-500 bg-slate-800' : 'text-slate-400 hover:text-slate-200'}`}
+          onClick={() => setMode("files")}
+          className={`flex-1 py-1.5 text-[11px] font-pixel transition-colors ${mode === "files" ? "text-green-400 border-b-2 border-green-500 bg-slate-800" : "text-slate-400 hover:text-slate-200"}`}
         >
           📁 Files ({files.length})
         </button>
         <button
-          onClick={() => setMode('changes')}
-          className={`flex-1 py-1.5 text-[11px] font-pixel transition-colors ${mode === 'changes' ? 'text-green-400 border-b-2 border-green-500 bg-slate-800' : 'text-slate-400 hover:text-slate-200'}`}
+          onClick={() => setMode("changes")}
+          className={`flex-1 py-1.5 text-[11px] font-pixel transition-colors ${mode === "changes" ? "text-green-400 border-b-2 border-green-500 bg-slate-800" : "text-slate-400 hover:text-slate-200"}`}
         >
           {changedFiles.length > 0 ? (
             <span className="text-amber-400">
               ● Changes ({changedFiles.length})
             </span>
           ) : (
-            'Changes'
+            "Changes"
           )}
         </button>
       </div>
@@ -260,28 +303,35 @@ export default function WorkspacePanel({ workspaceDir }: WorkspacePanelProps) {
       {recentChanges.length > 0 && (
         <div className="px-3 py-1 bg-slate-900/60 border-b border-slate-700/50 overflow-hidden">
           <div className="flex items-center gap-2">
-            <span className="text-[9px] font-pixel text-emerald-500 shrink-0 animate-pulse">LIVE</span>
+            <span className="text-[9px] font-pixel text-emerald-500 shrink-0 animate-pulse">
+              LIVE
+            </span>
             <span className="text-[10px] font-mono text-slate-400 truncate">
               {recentChanges[0].file}
               <span className="text-slate-500 ml-1">
-                ({recentChanges[0].type === 'rename' ? 'created/deleted' : 'modified'})
+                (
+                {recentChanges[0].type === "rename"
+                  ? "created/deleted"
+                  : "modified"}
+                )
               </span>
             </span>
           </div>
         </div>
       )}
 
-      {mode === 'files' ? (
+      {mode === "files" ? (
         /* ─── Live File Tree ─── */
         <div className="flex-1 overflow-y-auto">
           {files.length === 0 ? (
             <div className="text-slate-400 text-[11px] font-mono text-center pt-8 px-3">
-              No files yet.<br />
+              No files yet.
+              <br />
               Ask an agent to write code and files will appear here.
             </div>
           ) : (
             <div className="py-1">
-              {tree.map(node => (
+              {tree.map((node) => (
                 <FileTreeNode
                   key={node.path}
                   node={node}
@@ -306,29 +356,40 @@ export default function WorkspacePanel({ workspaceDir }: WorkspacePanelProps) {
           )}
 
           {/* Changed files list */}
-          <div className={`overflow-y-auto ${selectedDiffFile ? 'max-h-40 shrink-0' : 'flex-1'} border-b border-slate-700/50`}>
+          <div
+            className={`overflow-y-auto ${selectedDiffFile ? "max-h-40 shrink-0" : "flex-1"} border-b border-slate-700/50`}
+          >
             {changedFiles.length === 0 ? (
               <div className="text-slate-400 text-[11px] font-mono text-center pt-8 px-3">
-                No uncommitted changes.<br />
+                No uncommitted changes.
+                <br />
                 Working tree is clean.
               </div>
             ) : (
               <div className="py-1">
-                {changedFiles.map(f => (
+                {changedFiles.map((f) => (
                   <button
                     key={f.path}
                     onClick={() => loadFileDiff(f.path)}
                     className={`w-full flex items-center gap-2 py-[3px] px-3 hover:bg-slate-800/60 transition-colors text-left ${
-                      selectedDiffFile === f.path ? 'bg-slate-800/80' : ''
+                      selectedDiffFile === f.path ? "bg-slate-800/80" : ""
                     }`}
                   >
-                    <span className={`text-[11px] font-mono font-bold w-4 shrink-0 text-center ${statusColor(f.status)}`}>
+                    <span
+                      className={`text-[11px] font-mono font-bold w-4 shrink-0 text-center ${statusColor(f.status)}`}
+                    >
                       {statusBadge(f.status)}
                     </span>
-                    <span className="text-[12px] shrink-0">{fileIcon(f.path.split('/').pop() || '')}</span>
-                    <span className={`text-[12px] font-mono truncate ${
-                      selectedDiffFile === f.path ? 'text-green-400' : 'text-slate-300'
-                    }`}>
+                    <span className="text-[12px] shrink-0">
+                      {fileIcon(f.path.split("/").pop() || "")}
+                    </span>
+                    <span
+                      className={`text-[12px] font-mono truncate ${
+                        selectedDiffFile === f.path
+                          ? "text-green-400"
+                          : "text-slate-300"
+                      }`}
+                    >
                       {f.path}
                     </span>
                   </button>
@@ -345,7 +406,10 @@ export default function WorkspacePanel({ workspaceDir }: WorkspacePanelProps) {
                   {selectedDiffFile}
                 </span>
                 <button
-                  onClick={() => { setSelectedDiffFile(null); setDiffContent(''); }}
+                  onClick={() => {
+                    setSelectedDiffFile(null);
+                    setDiffContent("");
+                  }}
                   className="text-[10px] text-slate-400 hover:text-white shrink-0 ml-2"
                 >
                   ✕
@@ -358,19 +422,20 @@ export default function WorkspacePanel({ workspaceDir }: WorkspacePanelProps) {
                   </div>
                 ) : (
                   <pre className="px-3 py-2 text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-all">
-                    {diffContent.split('\n').map((line, i) => (
+                    {diffContent.split("\n").map((line, i) => (
                       <div
                         key={i}
                         className={
-                          line.startsWith('+') && !line.startsWith('+++')
-                            ? 'text-green-400 bg-green-950/30'
-                            : line.startsWith('-') && !line.startsWith('---')
-                            ? 'text-red-400 bg-red-950/30'
-                            : line.startsWith('@@')
-                            ? 'text-cyan-400'
-                            : line.startsWith('diff ') || line.startsWith('index ')
-                            ? 'text-slate-500'
-                            : 'text-slate-300'
+                          line.startsWith("+") && !line.startsWith("+++")
+                            ? "text-green-400 bg-green-950/30"
+                            : line.startsWith("-") && !line.startsWith("---")
+                              ? "text-red-400 bg-red-950/30"
+                              : line.startsWith("@@")
+                                ? "text-cyan-400"
+                                : line.startsWith("diff ") ||
+                                    line.startsWith("index ")
+                                  ? "text-slate-500"
+                                  : "text-slate-300"
                         }
                       >
                         {line}
@@ -396,7 +461,12 @@ interface FileTreeNodeProps {
   toggleDir: (path: string) => void;
 }
 
-function FileTreeNode({ node, depth, expandedDirs, toggleDir }: FileTreeNodeProps) {
+function FileTreeNode({
+  node,
+  depth,
+  expandedDirs,
+  toggleDir,
+}: FileTreeNodeProps) {
   const indent = depth * 16;
   const isOpen = expandedDirs.has(node.path);
 
@@ -409,26 +479,33 @@ function FileTreeNode({ node, depth, expandedDirs, toggleDir }: FileTreeNodeProp
           style={{ paddingLeft: `${8 + indent}px` }}
         >
           <span className="text-[11px] text-slate-400 w-3 text-center shrink-0">
-            {isOpen ? '▾' : '▸'}
+            {isOpen ? "▾" : "▸"}
           </span>
-          <span className="text-[12px] shrink-0">{isOpen ? '📂' : '📁'}</span>
-          <span className="text-[12px] font-mono text-slate-200 truncate">{node.name}</span>
+          <span className="text-[12px] shrink-0">{isOpen ? "📂" : "📁"}</span>
+          <span className="text-[12px] font-mono text-slate-200 truncate">
+            {node.name}
+          </span>
           {node.gitStatus && (
-            <span className={`text-[9px] font-mono font-bold ml-1 ${statusColor(node.gitStatus)}`}>●</span>
+            <span
+              className={`text-[9px] font-mono font-bold ml-1 ${statusColor(node.gitStatus)}`}
+            >
+              ●
+            </span>
           )}
           <span className="text-[12px] font-mono text-slate-400 ml-auto pr-3 opacity-0 group-hover:opacity-100 transition-opacity">
             {node.children.length}
           </span>
         </button>
-        {isOpen && node.children.map(child => (
-          <FileTreeNode
-            key={child.path}
-            node={child}
-            depth={depth + 1}
-            expandedDirs={expandedDirs}
-            toggleDir={toggleDir}
-          />
-        ))}
+        {isOpen &&
+          node.children.map((child) => (
+            <FileTreeNode
+              key={child.path}
+              node={child}
+              depth={depth + 1}
+              expandedDirs={expandedDirs}
+              toggleDir={toggleDir}
+            />
+          ))}
       </>
     );
   }
@@ -439,9 +516,13 @@ function FileTreeNode({ node, depth, expandedDirs, toggleDir }: FileTreeNodeProp
       style={{ paddingLeft: `${8 + indent + 16}px` }}
     >
       <span className="text-[12px] shrink-0">{fileIcon(node.name)}</span>
-      <span className="text-[12px] font-mono text-slate-300 truncate">{node.name}</span>
+      <span className="text-[12px] font-mono text-slate-300 truncate">
+        {node.name}
+      </span>
       {node.gitStatus && (
-        <span className={`text-[9px] font-mono font-bold ml-auto pr-3 ${statusColor(node.gitStatus)}`}>
+        <span
+          className={`text-[9px] font-mono font-bold ml-auto pr-3 ${statusColor(node.gitStatus)}`}
+        >
           {statusBadge(node.gitStatus)}
         </span>
       )}

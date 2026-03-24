@@ -75,7 +75,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     onPermissionRequest: (cb) => {
       const listener = (_event, reqId, request) => cb(reqId, request);
       ipcRenderer.on("claude-code:permission-request", listener);
-      return () => ipcRenderer.removeListener("claude-code:permission-request", listener);
+      return () =>
+        ipcRenderer.removeListener("claude-code:permission-request", listener);
     },
     onChunk: (cb) => {
       const listener = (_event, reqId, data) => cb(reqId, data);

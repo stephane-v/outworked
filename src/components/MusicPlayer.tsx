@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface Track {
   title: string;
@@ -10,7 +10,7 @@ interface ElectronMusicAPI {
   isElectron: boolean;
 }
 
-function getMusicAPI(): ElectronMusicAPI['music'] | null {
+function getMusicAPI(): ElectronMusicAPI["music"] | null {
   const w = window as unknown as { electronAPI?: ElectronMusicAPI };
   return w.electronAPI?.isElectron ? w.electronAPI.music : null;
 }
@@ -59,9 +59,12 @@ export default function MusicPlayer() {
     setPlaying((p) => !p);
   }, [playing]);
 
-  const skip = useCallback((dir: 1 | -1) => {
-    setTrackIndex((i) => (i + dir + tracks.length) % tracks.length);
-  }, [tracks.length]);
+  const skip = useCallback(
+    (dir: 1 | -1) => {
+      setTrackIndex((i) => (i + dir + tracks.length) % tracks.length);
+    },
+    [tracks.length],
+  );
 
   const toggleMute = useCallback(() => {
     const audio = audioRef.current;
@@ -78,7 +81,7 @@ export default function MusicPlayer() {
     return (
       <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-900/60 rounded border border-slate-700">
         <span className="text-[11px] font-pixel text-slate-400">
-          {loading ? 'Loading...' : 'No tracks'}
+          {loading ? "Loading..." : "No tracks"}
         </span>
       </div>
     );
@@ -104,7 +107,7 @@ export default function MusicPlayer() {
       <button
         onClick={toggle}
         className="text-indigo-400 hover:text-indigo-300 transition-colors"
-        title={playing ? 'Pause' : 'Play'}
+        title={playing ? "Pause" : "Play"}
       >
         {playing ? (
           <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
@@ -143,20 +146,44 @@ export default function MusicPlayer() {
       {/* Mute */}
       <button
         onClick={toggleMute}
-        className={`ml-auto transition-colors ${muted ? 'text-red-400 hover:text-red-300' : 'text-slate-300 hover:text-white'}`}
-        title={muted ? 'Unmute' : 'Mute'}
+        className={`ml-auto transition-colors ${muted ? "text-red-400 hover:text-red-300" : "text-slate-300 hover:text-white"}`}
+        title={muted ? "Unmute" : "Mute"}
       >
         {muted ? (
           <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
             <polygon points="1,4 1,8 3,8 6,11 6,1 3,4" />
-            <line x1="8" y1="3" x2="11" y2="9" stroke="currentColor" strokeWidth="1.5" />
-            <line x1="11" y1="3" x2="8" y2="9" stroke="currentColor" strokeWidth="1.5" />
+            <line
+              x1="8"
+              y1="3"
+              x2="11"
+              y2="9"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+            <line
+              x1="11"
+              y1="3"
+              x2="8"
+              y2="9"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
           </svg>
         ) : (
           <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
             <polygon points="1,4 1,8 3,8 6,11 6,1 3,4" />
-            <path d="M8,4 Q10,6 8,8" fill="none" stroke="currentColor" strokeWidth="1" />
-            <path d="M9,2.5 Q12,6 9,9.5" fill="none" stroke="currentColor" strokeWidth="1" />
+            <path
+              d="M8,4 Q10,6 8,8"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1"
+            />
+            <path
+              d="M9,2.5 Q12,6 9,9.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1"
+            />
           </svg>
         )}
       </button>

@@ -1,7 +1,6 @@
-
 export interface TaskStatus {
   assignment: { agentId: string; agentName: string; task: string };
-  status: 'pending' | 'running' | 'done' | 'error';
+  status: "pending" | "running" | "done" | "error";
   reply?: string;
   error?: string;
 }
@@ -13,4 +12,3 @@ export interface InstructionRun {
   tasks: TaskStatus[];
   done: boolean;
 }
-

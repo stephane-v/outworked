@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
-import { Agent } from '../lib/types';
-import type { FurnitureItem } from '../phaser/OfficeScene';
+import { useEffect, useRef } from "react";
+import { Agent } from "../lib/types";
+import type { FurnitureItem } from "../phaser/OfficeScene";
 
 interface OfficeCanvasProps {
   agents: Agent[];
@@ -11,19 +11,28 @@ interface OfficeCanvasProps {
   furnitureLayout?: FurnitureItem[] | null;
 }
 
-export default function OfficeCanvas({ agents, selectedAgentId, onAgentClick, onAgentMove, onFurnitureMove, furnitureLayout }: OfficeCanvasProps) {
+export default function OfficeCanvas({
+  agents,
+  selectedAgentId,
+  onAgentClick,
+  onAgentMove,
+  onFurnitureMove,
+  furnitureLayout,
+}: OfficeCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const gameRef = useRef<import('phaser').Game | null>(null);
-  const sceneRef = useRef<import('../phaser/OfficeScene').OfficeScene | null>(null);
+  const gameRef = useRef<import("phaser").Game | null>(null);
+  const sceneRef = useRef<import("../phaser/OfficeScene").OfficeScene | null>(
+    null,
+  );
   const agentsRef = useRef(agents);
   agentsRef.current = agents;
 
   useEffect(() => {
-    let game: import('phaser').Game;
+    let game: import("phaser").Game;
 
     async function initPhaser() {
-      const Phaser = await import('phaser');
-      const { OfficeScene } = await import('../phaser/OfficeScene');
+      const Phaser = await import("phaser");
+      const { OfficeScene } = await import("../phaser/OfficeScene");
 
       if (!containerRef.current || gameRef.current) return;
 
@@ -39,7 +48,7 @@ export default function OfficeCanvas({ agents, selectedAgentId, onAgentClick, on
         type: Phaser.AUTO,
         width: Math.floor(rect.width) || 768,
         height: Math.floor(rect.height) || 480,
-        backgroundColor: '#2a2a3a',
+        backgroundColor: "#2a2a3a",
         scene: scene,
         parent: containerRef.current,
         antialias: true,
@@ -102,10 +111,5 @@ export default function OfficeCanvas({ agents, selectedAgentId, onAgentClick, on
     }
   }, [onFurnitureMove]);
 
-  return (
-    <div
-      ref={containerRef}
-      className="w-full h-full absolute inset-0"
-    />
-  );
+  return <div ref={containerRef} className="w-full h-full absolute inset-0" />;
 }

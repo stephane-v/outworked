@@ -1,22 +1,38 @@
-import { Agent, AgentSkill, SubagentDef, McpServerInline, AGENT_COLORS, SPRITE_KEYS } from './types';
-import { readClaudeAgentFiles, writeClaudeAgentFile, getHomedir, AgentFileInfo, runClaudeCodeAdvanced } from './terminal';
-import { v4 as uuidv4 } from 'uuid';
+import {
+  Agent,
+  AgentSkill,
+  SubagentDef,
+  McpServerInline,
+  AGENT_COLORS,
+  SPRITE_KEYS,
+} from "./types";
+import {
+  readClaudeAgentFiles,
+  writeClaudeAgentFile,
+  getHomedir,
+  AgentFileInfo,
+  runClaudeCodeAdvanced,
+} from "./terminal";
+import { v4 as uuidv4 } from "uuid";
 
-const SKILLS_KEY = 'outworked_skills';
+const SKILLS_KEY = "outworked_skills";
 
-export function createAgent(partial: Partial<Agent>, claudeCodeDefault?: boolean): Agent {
+export function createAgent(
+  partial: Partial<Agent>,
+  claudeCodeDefault?: boolean,
+): Agent {
   const idx = Math.floor(Math.random() * SPRITE_KEYS.length);
   return {
     id: uuidv4(),
     name: makeAgentName(),
-    role: 'Assistant',
-    personality: 'You are a helpful AI assistant working in the office.',
-    model: claudeCodeDefault ? 'claude-code' : 'gpt-5.4',
-    provider: claudeCodeDefault ? 'claude-code' : 'openai',
+    role: "Assistant",
+    personality: "You are a helpful AI assistant working in the office.",
+    model: claudeCodeDefault ? "claude-code" : "gpt-5.4",
+    provider: claudeCodeDefault ? "claude-code" : "openai",
     skills: [],
     position: { x: 3, y: 3 },
-    status: 'idle',
-    currentThought: '',
+    status: "idle",
+    currentThought: "",
     spriteKey: SPRITE_KEYS[idx],
     history: [],
     color: AGENT_COLORS[idx],
@@ -28,7 +44,7 @@ export function createAgent(partial: Partial<Agent>, claudeCodeDefault?: boolean
 // ─── App-level skills ──────────────────────────────────────────
 
 export function loadSkills(): AgentSkill[] {
-  if (typeof window === 'undefined') return [];
+  if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(SKILLS_KEY);
     if (!raw) return [];
@@ -39,13 +55,22 @@ export function loadSkills(): AgentSkill[] {
 }
 
 export function saveSkills(skills: AgentSkill[]): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   localStorage.setItem(SKILLS_KEY, JSON.stringify(skills));
 }
 
 export function resetProject(agents: Agent[]): Agent[] {
-  const cleared = agents.map((a) => ({ ...a, history: [], todos: [], status: 'idle' as const, currentThought: '', currentSessionId: undefined, sessionId: undefined }));
-  if (typeof window !== 'undefined') localStorage.removeItem('outworked_selected_agent');
+  const cleared = agents.map((a) => ({
+    ...a,
+    history: [],
+    todos: [],
+    status: "idle" as const,
+    currentThought: "",
+    currentSessionId: undefined,
+    sessionId: undefined,
+  }));
+  if (typeof window !== "undefined")
+    localStorage.removeItem("outworked_selected_agent");
   return cleared;
 }
 
@@ -56,10 +81,12 @@ export function resetProject(agents: Agent[]): Agent[] {
  * Takes the full Agent object and generates all outworked-* frontmatter fields.
  */
 export function buildSubagentMd(agent: Agent, slug: string): string {
-  const def: SubagentDef = agent.subagentDef || { description: agent.role || 'Office assistant' };
+  const def: SubagentDef = agent.subagentDef || {
+    description: agent.role || "Office assistant",
+  };
   const body = agent.personality || `You are ${agent.name}. ${def.description}`;
 
-  let fm = '---\n';
+  let fm = "---\n";
 
   // Outworked metadata fields
   fm += `outworked-id: ${agent.id}\n`;
@@ -75,11 +102,11 @@ export function buildSubagentMd(agent: Agent, slug: string): string {
   fm += `name: ${slug}\n`;
   fm += `description: ${def.description}\n`;
   if (def.tools && def.tools.length > 0) {
-    fm += 'tools:\n';
+    fm += "tools:\n";
     for (const t of def.tools) fm += `  - ${t}\n`;
   }
   if (def.disallowedTools && def.disallowedTools.length > 0) {
-    fm += 'disallowedTools:\n';
+    fm += "disallowedTools:\n";
     for (const t of def.disallowedTools) fm += `  - ${t}\n`;
   }
   if (def.model) fm += `model: ${def.model}\n`;
@@ -89,13 +116,13 @@ export function buildSubagentMd(agent: Agent, slug: string): string {
   if (def.background) fm += `background: true\n`;
   if (def.memory) fm += `memory: ${def.memory}\n`;
   if (def.skills && def.skills.length > 0) {
-    fm += 'skills:\n';
+    fm += "skills:\n";
     for (const s of def.skills) fm += `  - ${s}\n`;
   }
   if (def.mcpServers && def.mcpServers.length > 0) {
-    fm += 'mcpServers:\n';
+    fm += "mcpServers:\n";
     for (const entry of def.mcpServers) {
-      if (typeof entry === 'string') {
+      if (typeof entry === "string") {
         fm += `  - ${entry}\n`;
       } else {
         for (const [srvName, cfg] of Object.entries(entry)) {
@@ -112,7 +139,7 @@ export function buildSubagentMd(agent: Agent, slug: string): string {
     }
   }
   if (def.hooks && Object.keys(def.hooks).length > 0) {
-    fm += 'hooks:\n';
+    fm += "hooks:\n";
     for (const [event, matchers] of Object.entries(def.hooks)) {
       fm += `  ${event}:\n`;
       for (const m of matchers) {
@@ -120,14 +147,14 @@ export function buildSubagentMd(agent: Agent, slug: string): string {
         else fm += `    - hooks:\n`;
         if (m.matcher) fm += `      hooks:\n`;
         for (const h of m.hooks) {
-          const prefix = m.matcher ? '        ' : '        ';
+          const prefix = m.matcher ? "        " : "        ";
           fm += `${prefix}- type: ${h.type}\n`;
           fm += `${prefix}  command: ${JSON.stringify(h.command)}\n`;
         }
       }
     }
   }
-  fm += '---\n\n';
+  fm += "---\n\n";
   fm += body;
   return fm;
 }
@@ -146,10 +173,14 @@ export async function createClaudeAgentFile(
   if (!agent.id) {
     agent = { ...agent, id: uuidv4() };
   }
-  const slug = agent.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'agent';
-  const scope = agent.agentScope || 'user';
+  const slug =
+    agent.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "") || "agent";
+  const scope = agent.agentScope || "user";
   let basePath: string;
-  if (scope === 'project' && workspaceDir) {
+  if (scope === "project" && workspaceDir) {
     basePath = `${workspaceDir}/.claude/agents`;
   } else {
     basePath = `${getHomedir()}/.claude/agents`;
@@ -168,7 +199,7 @@ export async function generateAgentWithAI(
   description: string,
   opts: {
     name?: string;
-    scope?: 'user' | 'project';
+    scope?: "user" | "project";
     workspaceDir?: string;
     onProgress?: (chunk: string) => void;
     skipWrite?: boolean;
@@ -204,7 +235,7 @@ Rules:
 
   try {
     // Use maxTurns: 1 to prevent Claude from using tools and force text-only output
-    let fullText = '';
+    let fullText = "";
     const result = await runClaudeCodeAdvanced(
       {
         prompt,
@@ -223,18 +254,21 @@ Rules:
 
     // Strip any accidental code fences the LLM might wrap around the output
     let content = output;
-    if (content.startsWith('```')) {
-      content = content.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '').trim();
+    if (content.startsWith("```")) {
+      content = content
+        .replace(/^```[a-z]*\n?/, "")
+        .replace(/\n?```$/, "")
+        .trim();
     }
 
     // Try to extract frontmatter content from within the response
     // (Claude may include preamble text before the --- block)
-    if (!content.startsWith('---')) {
-      const fmStart = content.indexOf('\n---\n');
+    if (!content.startsWith("---")) {
+      const fmStart = content.indexOf("\n---\n");
       if (fmStart !== -1) {
         content = content.slice(fmStart + 1).trim();
       } else {
-        const altStart = content.indexOf('---\n');
+        const altStart = content.indexOf("---\n");
         if (altStart > 0) {
           content = content.slice(altStart).trim();
         }
@@ -242,18 +276,26 @@ Rules:
     }
 
     // Validate we got valid frontmatter
-    if (!content.startsWith('---')) {
-      console.warn('[generateAgentWithAI] Output did not contain valid frontmatter, got:', output.slice(0, 200));
+    if (!content.startsWith("---")) {
+      console.warn(
+        "[generateAgentWithAI] Output did not contain valid frontmatter, got:",
+        output.slice(0, 200),
+      );
       return null;
     }
 
     // Extract the slug from the generated frontmatter to determine filename
     const nameMatch = content.match(/^name:\s*(.+)$/m);
-    const slug = nameMatch ? nameMatch[1].trim() : (opts.name || 'agent').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const slug = nameMatch
+      ? nameMatch[1].trim()
+      : (opts.name || "agent")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/(^-|-$)/g, "");
 
-    const scope = opts.scope || 'user';
+    const scope = opts.scope || "user";
     let basePath: string;
-    if (scope === 'project' && opts.workspaceDir) {
+    if (scope === "project" && opts.workspaceDir) {
       basePath = `${opts.workspaceDir}/.claude/agents`;
     } else {
       basePath = `${getHomedir()}/.claude/agents`;
@@ -266,7 +308,7 @@ Rules:
     const ok = await writeClaudeAgentFile(filePath, content);
     return ok ? { content, filePath } : null;
   } catch (err) {
-    console.error('[generateAgentWithAI]', err);
+    console.error("[generateAgentWithAI]", err);
     return null;
   }
 }
@@ -279,22 +321,22 @@ export function parseSubagentFrontmatter(content: string): {
   def: Partial<SubagentDef> & {
     name?: string;
     description?: string;
-    'outworked-id'?: string;
-    'outworked-name'?: string;
-    'outworked-role'?: string;
-    'outworked-position'?: string;
-    'outworked-sprite'?: string;
-    'outworked-color'?: string;
-    'outworked-auto-created'?: boolean;
-    'outworked-boss'?: boolean;
+    "outworked-id"?: string;
+    "outworked-name"?: string;
+    "outworked-role"?: string;
+    "outworked-position"?: string;
+    "outworked-sprite"?: string;
+    "outworked-color"?: string;
+    "outworked-auto-created"?: boolean;
+    "outworked-boss"?: boolean;
   };
   body: string;
 } {
   const trimmed = content.trimStart();
-  if (!trimmed.startsWith('---')) {
+  if (!trimmed.startsWith("---")) {
     return { def: {}, body: content };
   }
-  const endIdx = trimmed.indexOf('\n---', 3);
+  const endIdx = trimmed.indexOf("\n---", 3);
   if (endIdx === -1) {
     return { def: {}, body: content };
   }
@@ -305,18 +347,18 @@ export function parseSubagentFrontmatter(content: string): {
   const raw = parseYamlBlock(fmText);
 
   // Extract mcpServers: list of strings or {name: {type,command,args,url}} objects
-  let mcpServers: SubagentDef['mcpServers'] | undefined;
+  let mcpServers: SubagentDef["mcpServers"] | undefined;
   if (Array.isArray(raw.mcpServers)) {
-    mcpServers = (raw.mcpServers as unknown[]).map(entry => {
-      if (typeof entry === 'string') return entry;
-      if (typeof entry === 'object' && entry !== null) {
+    mcpServers = (raw.mcpServers as unknown[]).map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (typeof entry === "object" && entry !== null) {
         const obj = entry as Record<string, unknown>;
         const result: Record<string, McpServerInline> = {};
         for (const [k, v] of Object.entries(obj)) {
-          if (typeof v === 'object' && v !== null) {
+          if (typeof v === "object" && v !== null) {
             const cfg = v as Record<string, unknown>;
             result[k] = {
-              type: (cfg.type as McpServerInline['type']) || 'stdio',
+              type: (cfg.type as McpServerInline["type"]) || "stdio",
               command: cfg.command as string | undefined,
               args: Array.isArray(cfg.args) ? cfg.args.map(String) : undefined,
               url: cfg.url as string | undefined,
@@ -330,8 +372,12 @@ export function parseSubagentFrontmatter(content: string): {
   }
 
   // Extract hooks: Record<string, HookMatcher[]>
-  let hooks: SubagentDef['hooks'] | undefined;
-  if (typeof raw.hooks === 'object' && raw.hooks !== null && !Array.isArray(raw.hooks)) {
+  let hooks: SubagentDef["hooks"] | undefined;
+  if (
+    typeof raw.hooks === "object" &&
+    raw.hooks !== null &&
+    !Array.isArray(raw.hooks)
+  ) {
     hooks = {};
     const hooksObj = raw.hooks as Record<string, unknown>;
     for (const [event, matcherList] of Object.entries(hooksObj)) {
@@ -339,9 +385,9 @@ export function parseSubagentFrontmatter(content: string): {
       hooks[event] = matcherList.map((m: unknown) => {
         const mObj = m as Record<string, unknown>;
         const hookCmds = Array.isArray(mObj.hooks)
-          ? (mObj.hooks as Record<string, unknown>[]).map(h => ({
-              type: 'command' as const,
-              command: String(h.command || ''),
+          ? (mObj.hooks as Record<string, unknown>[]).map((h) => ({
+              type: "command" as const,
+              command: String(h.command || ""),
             }))
           : [];
         return {
@@ -357,24 +403,33 @@ export function parseSubagentFrontmatter(content: string): {
       name: raw.name as string | undefined,
       description: raw.description as string | undefined,
       tools: Array.isArray(raw.tools) ? raw.tools.map(String) : undefined,
-      disallowedTools: Array.isArray(raw.disallowedTools) ? raw.disallowedTools.map(String) : undefined,
+      disallowedTools: Array.isArray(raw.disallowedTools)
+        ? raw.disallowedTools.map(String)
+        : undefined,
       model: raw.model as string | undefined,
       permissionMode: raw.permissionMode as string | undefined,
-      maxTurns: typeof raw.maxTurns === 'number' ? raw.maxTurns : undefined,
+      maxTurns: typeof raw.maxTurns === "number" ? raw.maxTurns : undefined,
       skills: Array.isArray(raw.skills) ? raw.skills.map(String) : undefined,
-      memory: raw.memory as SubagentDef['memory'] | undefined,
+      memory: raw.memory as SubagentDef["memory"] | undefined,
       background: raw.background as boolean | undefined,
-      isolation: raw.isolation as SubagentDef['isolation'] | undefined,
+      isolation: raw.isolation as SubagentDef["isolation"] | undefined,
       mcpServers,
       hooks,
-      'outworked-id': raw['outworked-id'] as string | undefined,
-      'outworked-name': raw['outworked-name'] as string | undefined,
-      'outworked-role': raw['outworked-role'] as string | undefined,
-      'outworked-position': raw['outworked-position'] as string | undefined,
-      'outworked-sprite': raw['outworked-sprite'] as string | undefined,
-      'outworked-color': raw['outworked-color'] as string | undefined,
-      'outworked-auto-created': raw['outworked-auto-created'] === true || raw['outworked-auto-created'] === 'true' ? true : undefined,
-      'outworked-boss': raw['outworked-boss'] === true || raw['outworked-boss'] === 'true' ? true : undefined,
+      "outworked-id": raw["outworked-id"] as string | undefined,
+      "outworked-name": raw["outworked-name"] as string | undefined,
+      "outworked-role": raw["outworked-role"] as string | undefined,
+      "outworked-position": raw["outworked-position"] as string | undefined,
+      "outworked-sprite": raw["outworked-sprite"] as string | undefined,
+      "outworked-color": raw["outworked-color"] as string | undefined,
+      "outworked-auto-created":
+        raw["outworked-auto-created"] === true ||
+        raw["outworked-auto-created"] === "true"
+          ? true
+          : undefined,
+      "outworked-boss":
+        raw["outworked-boss"] === true || raw["outworked-boss"] === "true"
+          ? true
+          : undefined,
     },
     body,
   };
@@ -385,7 +440,7 @@ export function parseSubagentFrontmatter(content: string): {
  * Handles the subset of YAML used in Claude Code agent frontmatter.
  */
 function parseYamlBlock(text: string): Record<string, unknown> {
-  const lines = text.split('\n');
+  const lines = text.split("\n");
   return parseYamlLines(lines, 0).value as Record<string, unknown>;
 }
 
@@ -404,7 +459,10 @@ function parseYamlLines(
 
   while (i < lines.length) {
     const line = lines[i];
-    if (!line.trim()) { i++; continue; }
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
 
     const indent = getIndent(line);
     if (indent <= parentIndent) break; // dedented past our level
@@ -432,7 +490,7 @@ function parseYamlLines(
           const nextLine = lines[i + 1];
           const nextTrimmed = nextLine.trim();
           const nextIndent = getIndent(nextLine);
-          if (nextIndent > indent && nextTrimmed.startsWith('-')) {
+          if (nextIndent > indent && nextTrimmed.startsWith("-")) {
             // It's a list
             const { value, endIdx } = parseYamlList(lines, i + 1, indent);
             result[key] = value;
@@ -443,11 +501,11 @@ function parseYamlLines(
             result[key] = value;
             i = endIdx;
           } else {
-            result[key] = '';
+            result[key] = "";
             i++;
           }
         } else {
-          result[key] = '';
+          result[key] = "";
           i++;
         }
       }
@@ -469,7 +527,10 @@ function parseYamlList(
 
   while (i < lines.length) {
     const line = lines[i];
-    if (!line.trim()) { i++; continue; }
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
 
     const indent = getIndent(line);
     if (indent <= parentIndent) break;
@@ -493,7 +554,10 @@ function parseYamlList(
         // Collect any sibling keys at the same item indent + 2
         while (i < lines.length) {
           const nextLine = lines[i];
-          if (!nextLine.trim()) { i++; continue; }
+          if (!nextLine.trim()) {
+            i++;
+            continue;
+          }
           const nextIndent = getIndent(nextLine);
           if (nextIndent <= itemIndent) break;
           const sibKv = nextLine.match(/^(\s*)([a-zA-Z_][\w-]*):\s*(.*)/);
@@ -510,7 +574,7 @@ function parseYamlList(
           const nextLine = lines[i];
           const nextIndent = getIndent(nextLine);
           const nextTrimmed = nextLine.trim();
-          if (nextIndent > itemIndent && nextTrimmed.startsWith('-')) {
+          if (nextIndent > itemIndent && nextTrimmed.startsWith("-")) {
             const { value, endIdx } = parseYamlList(lines, i, itemIndent);
             result.push({ [key]: value });
             i = endIdx;
@@ -519,10 +583,10 @@ function parseYamlList(
             result.push({ [key]: value });
             i = endIdx;
           } else {
-            result.push({ [key]: '' });
+            result.push({ [key]: "" });
           }
         } else {
-          result.push({ [key]: '' });
+          result.push({ [key]: "" });
         }
       }
     } else if (itemVal) {
@@ -538,14 +602,17 @@ function parseYamlList(
 }
 
 function parseScalar(val: string): string | number | boolean {
-  if (val === 'true') return true;
-  if (val === 'false') return false;
+  if (val === "true") return true;
+  if (val === "false") return false;
   if (/^\d+$/.test(val)) return parseInt(val, 10);
   return stripQuotes(val);
 }
 
 function stripQuotes(val: string): string {
-  if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+  if (
+    (val.startsWith('"') && val.endsWith('"')) ||
+    (val.startsWith("'") && val.endsWith("'"))
+  ) {
     return val.slice(1, -1);
   }
   return val;
@@ -554,13 +621,15 @@ function stripQuotes(val: string): string {
 // ─── Disk-based agent loading / saving ─────────────────────────
 
 const DEFAULT_BOSS_PERSONALITY =
-  'You are the Boss, the office manager. Your ONLY role is delegation — you NEVER do implementation work yourself. You assign every task to the right employee using the Agent tool. You break complex requests into subtasks and delegate each one. You speak with authority but are fair and encouraging.';
+  "You are the Boss, the office manager. Your ONLY role is delegation — you NEVER do implementation work yourself. You assign every task to the right employee using the Agent tool. You break complex requests into subtasks and delegate each one. You speak with authority but are fair and encouraging.";
 
 /**
  * Load all agents from Claude Code .md files on disk.
  * This is the single source of truth — localStorage is not used for agents.
  */
-export async function loadAgentsFromDisk(workspaceDir?: string): Promise<Agent[]> {
+export async function loadAgentsFromDisk(
+  workspaceDir?: string,
+): Promise<Agent[]> {
   let files: AgentFileInfo[];
   try {
     files = await readClaudeAgentFiles(workspaceDir);
@@ -577,21 +646,23 @@ export async function loadAgentsFromDisk(workspaceDir?: string): Promise<Agent[]
     const { def, body } = parseSubagentFrontmatter(file.content);
 
     // Resolve outworked display fields
-    const name = def['outworked-name'] || def.name || file.file.replace(/\.md$/, '');
-    const role = def['outworked-role'] || def.description || 'Claude Code Subagent';
+    const name =
+      def["outworked-name"] || def.name || file.file.replace(/\.md$/, "");
+    const role =
+      def["outworked-role"] || def.description || "Claude Code Subagent";
     const personality = body || `You are ${name}. ${role}`;
-    const isBoss = !!def['outworked-boss'];
-    const autoCreated = !!def['outworked-auto-created'];
+    const isBoss = !!def["outworked-boss"];
+    const autoCreated = !!def["outworked-auto-created"];
 
     // Resolve id — generate one if missing
-    const hadId = !!def['outworked-id'];
-    const id = def['outworked-id'] || uuidv4();
+    const hadId = !!def["outworked-id"];
+    const id = def["outworked-id"] || uuidv4();
 
     // Resolve position
     let position: { x: number; y: number };
-    const posStr = def['outworked-position'];
+    const posStr = def["outworked-position"];
     if (posStr && /^\d+,\d+$/.test(posStr)) {
-      const [px, py] = posStr.split(',').map(Number);
+      const [px, py] = posStr.split(",").map(Number);
       position = { x: px, y: py };
     } else {
       position = {
@@ -602,8 +673,8 @@ export async function loadAgentsFromDisk(workspaceDir?: string): Promise<Agent[]
 
     // Resolve sprite and color — use index as fallback
     const idx = i % SPRITE_KEYS.length;
-    const spriteKey = def['outworked-sprite'] || SPRITE_KEYS[idx];
-    const color = def['outworked-color'] || AGENT_COLORS[idx];
+    const spriteKey = def["outworked-sprite"] || SPRITE_KEYS[idx];
+    const color = def["outworked-color"] || AGENT_COLORS[idx];
 
     // Build subagentDef
     const subagentDef: SubagentDef = {
@@ -627,8 +698,8 @@ export async function loadAgentsFromDisk(workspaceDir?: string): Promise<Agent[]
       name,
       role,
       personality,
-      model: 'claude-code',
-      provider: 'claude-code',
+      model: "claude-code",
+      provider: "claude-code",
       skills: [],
       position,
       spriteKey,
@@ -639,8 +710,8 @@ export async function loadAgentsFromDisk(workspaceDir?: string): Promise<Agent[]
       subagentDef,
       agentScope: file.scope,
       // Ephemeral defaults
-      status: 'idle',
-      currentThought: '',
+      status: "idle",
+      currentThought: "",
       history: [],
       todos: [],
     };
@@ -649,7 +720,7 @@ export async function loadAgentsFromDisk(workspaceDir?: string): Promise<Agent[]
 
     // Queue file rewrite if it was missing outworked-id
     if (!hadId) {
-      const slug = def.name || file.file.replace(/\.md$/, '');
+      const slug = def.name || file.file.replace(/\.md$/, "");
       filesToRewrite.push({ agent, slug, filePath: file.path });
     }
   }
@@ -661,21 +732,21 @@ export async function loadAgentsFromDisk(workspaceDir?: string): Promise<Agent[]
   }
 
   // Ensure there is exactly one Boss agent; create boss.md if none found
-  const hasBoss = agents.some(a => a.isBoss);
+  const hasBoss = agents.some((a) => a.isBoss);
   if (!hasBoss) {
     const bossIdx = 3 % SPRITE_KEYS.length; // yellow by default
     const bossAgent: Agent = createAgent(
       {
-        name: 'Boss',
-        role: 'Office Manager',
+        name: "Boss",
+        role: "Office Manager",
         personality: DEFAULT_BOSS_PERSONALITY,
-        model: 'claude-code',
-        provider: 'claude-code',
+        model: "claude-code",
+        provider: "claude-code",
         position: { x: 7, y: 1 },
         spriteKey: SPRITE_KEYS[bossIdx],
         color: AGENT_COLORS[bossIdx],
         isBoss: true,
-        agentScope: 'user',
+        agentScope: "user",
       },
       true,
     );
@@ -696,13 +767,20 @@ export async function loadAgentsFromDisk(workspaceDir?: string): Promise<Agent[]
  * Save an agent back to its .md file on disk.
  * Uses agent.subagentFile for the path; falls back to createClaudeAgentFile() if not set.
  */
-export async function saveAgentToDisk(agent: Agent, workspaceDir?: string): Promise<void> {
+export async function saveAgentToDisk(
+  agent: Agent,
+  workspaceDir?: string,
+): Promise<void> {
   if (!agent.subagentFile) {
     await createClaudeAgentFile(agent, workspaceDir);
     return;
   }
 
-  const slug = agent.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'agent';
+  const slug =
+    agent.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "") || "agent";
   const content = buildSubagentMd(agent, slug);
   await writeClaudeAgentFile(agent.subagentFile, content);
 }
@@ -713,17 +791,19 @@ export async function saveAgentToDisk(agent: Agent, workspaceDir?: string): Prom
  * Migrate agents from localStorage to .md files on disk.
  * Returns true if migration was performed, false if nothing to migrate.
  */
-export async function migrateLocalStorageAgents(workspaceDir?: string): Promise<boolean> {
-  if (typeof window === 'undefined') return false;
+export async function migrateLocalStorageAgents(
+  workspaceDir?: string,
+): Promise<boolean> {
+  if (typeof window === "undefined") return false;
 
-  const raw = localStorage.getItem('outworked_agents');
+  const raw = localStorage.getItem("outworked_agents");
   if (!raw) return false;
 
   let agents: Agent[];
   try {
     agents = JSON.parse(raw) as Agent[];
   } catch {
-    localStorage.removeItem('outworked_agents');
+    localStorage.removeItem("outworked_agents");
     return false;
   }
 
@@ -734,11 +814,22 @@ export async function migrateLocalStorageAgents(workspaceDir?: string): Promise<
     }
   }
 
-  localStorage.removeItem('outworked_agents');
+  localStorage.removeItem("outworked_agents");
   return true;
 }
 
 export function makeAgentName() {
-  const names = ['Alex', 'Sam', 'Charlie', 'Taylor', 'Jordan', 'Morgan', 'Casey', 'Riley', 'Jamie', 'Drew'];
+  const names = [
+    "Alex",
+    "Sam",
+    "Charlie",
+    "Taylor",
+    "Jordan",
+    "Morgan",
+    "Casey",
+    "Riley",
+    "Jamie",
+    "Drew",
+  ];
   return names[Math.floor(Math.random() * names.length)];
 }

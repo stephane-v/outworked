@@ -5,7 +5,7 @@
  */
 
 export const FRAME_PX = 48;
-export type AnimState = 'idle' | 'walk' | 'type' | 'think';
+export type AnimState = "idle" | "walk" | "type" | "think";
 
 export interface CharacterPalette {
   skin: number;
@@ -22,20 +22,33 @@ export interface CharacterPalette {
   eyeColor: number;
 }
 
-const SKIN_TONES = [0xffe0bd, 0xf5c8a0, 0xd4a574, 0xc68642, 0x8d5524, 0xfce4c0, 0xb87840];
-const HAIR_COLORS = [0x2c1810, 0x8b4513, 0xd4a020, 0xc0392b, 0x1a1a2e, 0xe8e0d8, 0x4a2060, 0x1a6030];
-const PANTS_COLORS = [0x2c3e50, 0x1a1a2e, 0x3d2b1f, 0x2d3436, 0x192a56, 0x4a3728];
+const SKIN_TONES = [
+  0xffe0bd, 0xf5c8a0, 0xd4a574, 0xc68642, 0x8d5524, 0xfce4c0, 0xb87840,
+];
+const HAIR_COLORS = [
+  0x2c1810, 0x8b4513, 0xd4a020, 0xc0392b, 0x1a1a2e, 0xe8e0d8, 0x4a2060,
+  0x1a6030,
+];
+const PANTS_COLORS = [
+  0x2c3e50, 0x1a1a2e, 0x3d2b1f, 0x2d3436, 0x192a56, 0x4a3728,
+];
 const SHOE_COLORS = [0x1a1a2e, 0x2c1810, 0x4a3728, 0x333333, 0x8b0000];
-const EYE_COLORS = [0x3B5998, 0x2d6a4f, 0x8b4513, 0x4a4a4a, 0x1a6030, 0x6b3fa0];
+const EYE_COLORS = [0x3b5998, 0x2d6a4f, 0x8b4513, 0x4a4a4a, 0x1a6030, 0x6b3fa0];
 const HAIR_STYLE_COUNT = 8; // 5 original + 3 new
 
-export function buildPalette(shirtColor: number, index: number): CharacterPalette {
+export function buildPalette(
+  shirtColor: number,
+  index: number,
+): CharacterPalette {
   const skinIdx = index % SKIN_TONES.length;
   const hairIdx = (index * 3 + 1) % HAIR_COLORS.length;
   const r = (shirtColor >> 16) & 0xff;
   const g = (shirtColor >> 8) & 0xff;
   const b = shirtColor & 0xff;
-  const dark = (Math.max(0, r - 40) << 16) | (Math.max(0, g - 40) << 8) | Math.max(0, b - 40);
+  const dark =
+    (Math.max(0, r - 40) << 16) |
+    (Math.max(0, g - 40) << 8) |
+    Math.max(0, b - 40);
 
   return {
     skin: SKIN_TONES[skinIdx],
@@ -55,7 +68,7 @@ export function buildPalette(shirtColor: number, index: number): CharacterPalett
 
 // ---- color helpers ----
 function hex(n: number): string {
-  return '#' + n.toString(16).padStart(6, '0');
+  return "#" + n.toString(16).padStart(6, "0");
 }
 function lighten(c: number, amt: number): string {
   const r = Math.min(255, ((c >> 16) & 0xff) + amt);
@@ -65,7 +78,14 @@ function lighten(c: number, amt: number): string {
 }
 
 // ---- geometry helpers ----
-function rrect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+function rrect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -99,19 +119,88 @@ interface FrameSpec {
 }
 
 const SPECS: Record<string, FrameSpec> = {
-  idle_0: { dy: 0, blink: false, mouthOpen: false, lh: [14, 36], rh: [34, 36], lf: [20, 44], rf: [28, 44] },
-  idle_1: { dy: -1, blink: true, mouthOpen: false, lh: [14, 35], rh: [34, 35], lf: [20, 44], rf: [28, 44] },
-  walk_0: { dy: -1, blink: false, mouthOpen: false, lh: [18, 32], rh: [30, 38], lf: [18, 44], rf: [30, 44] },
-  walk_1: { dy: 0, blink: false, mouthOpen: false, lh: [18, 38], rh: [30, 32], lf: [22, 44], rf: [26, 44] },
-  type_0: { dy: 0, blink: false, mouthOpen: false, lh: [18, 34], rh: [30, 34], lf: [20, 44], rf: [28, 44] },
-  type_1: { dy: 0, blink: false, mouthOpen: false, lh: [16, 35], rh: [32, 33], lf: [20, 44], rf: [28, 44] },
-  think_0: { dy: 0, blink: false, mouthOpen: false, lh: [14, 36], rh: [28, 22], lf: [20, 44], rf: [28, 44] },
-  think_1: { dy: -1, blink: false, mouthOpen: true, lh: [14, 35], rh: [28, 21], lf: [20, 44], rf: [28, 44] },
+  idle_0: {
+    dy: 0,
+    blink: false,
+    mouthOpen: false,
+    lh: [14, 36],
+    rh: [34, 36],
+    lf: [20, 44],
+    rf: [28, 44],
+  },
+  idle_1: {
+    dy: -1,
+    blink: true,
+    mouthOpen: false,
+    lh: [14, 35],
+    rh: [34, 35],
+    lf: [20, 44],
+    rf: [28, 44],
+  },
+  walk_0: {
+    dy: -1,
+    blink: false,
+    mouthOpen: false,
+    lh: [18, 32],
+    rh: [30, 38],
+    lf: [18, 44],
+    rf: [30, 44],
+  },
+  walk_1: {
+    dy: 0,
+    blink: false,
+    mouthOpen: false,
+    lh: [18, 38],
+    rh: [30, 32],
+    lf: [22, 44],
+    rf: [26, 44],
+  },
+  type_0: {
+    dy: 0,
+    blink: false,
+    mouthOpen: false,
+    lh: [18, 34],
+    rh: [30, 34],
+    lf: [20, 44],
+    rf: [28, 44],
+  },
+  type_1: {
+    dy: 0,
+    blink: false,
+    mouthOpen: false,
+    lh: [16, 35],
+    rh: [32, 33],
+    lf: [20, 44],
+    rf: [28, 44],
+  },
+  think_0: {
+    dy: 0,
+    blink: false,
+    mouthOpen: false,
+    lh: [14, 36],
+    rh: [28, 22],
+    lf: [20, 44],
+    rf: [28, 44],
+  },
+  think_1: {
+    dy: -1,
+    blink: false,
+    mouthOpen: true,
+    lh: [14, 35],
+    rh: [28, 21],
+    lf: [20, 44],
+    rf: [28, 44],
+  },
 };
 
 // ---- drawing functions ----
 
-function drawLeg(ctx: CanvasRenderingContext2D, p: CharacterPalette, cx: number, topY: number) {
+function drawLeg(
+  ctx: CanvasRenderingContext2D,
+  p: CharacterPalette,
+  cx: number,
+  topY: number,
+) {
   // Pants
   ctx.fillStyle = hex(p.pants);
   rrect(ctx, cx - LEG_W / 2, topY, LEG_W, LEG_H, 1);
@@ -128,11 +217,18 @@ function drawLeg(ctx: CanvasRenderingContext2D, p: CharacterPalette, cx: number,
   ctx.fillRect(cx - LEG_W / 2, topY + LEG_H, LEG_W, 1);
 }
 
-function drawArm(ctx: CanvasRenderingContext2D, p: CharacterPalette, sx: number, sy: number, ex: number, ey: number) {
+function drawArm(
+  ctx: CanvasRenderingContext2D,
+  p: CharacterPalette,
+  sx: number,
+  sy: number,
+  ex: number,
+  ey: number,
+) {
   // Sleeve
   ctx.strokeStyle = hex(p.shirt);
   ctx.lineWidth = 5;
-  ctx.lineCap = 'round';
+  ctx.lineCap = "round";
   ctx.beginPath();
   ctx.moveTo(sx, sy);
   ctx.lineTo(ex, ey);
@@ -156,7 +252,11 @@ function drawArm(ctx: CanvasRenderingContext2D, p: CharacterPalette, sx: number,
   ctx.fill();
 }
 
-function drawBody(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number) {
+function drawBody(
+  ctx: CanvasRenderingContext2D,
+  p: CharacterPalette,
+  dy: number,
+) {
   const bx = CX - BODY_W / 2;
   const by = BODY_TOP + dy;
 
@@ -176,7 +276,7 @@ function drawBody(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
   ctx.fill();
 
   // Collar
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = "#ffffff";
   ctx.beginPath();
   ctx.moveTo(CX - 5, by);
   ctx.lineTo(CX, by + 4);
@@ -184,7 +284,7 @@ function drawBody(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
   ctx.closePath();
   ctx.fill();
   // Collar shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.08)';
+  ctx.fillStyle = "rgba(0,0,0,0.08)";
   ctx.beginPath();
   ctx.moveTo(CX - 4, by);
   ctx.lineTo(CX, by + 3);
@@ -193,7 +293,13 @@ function drawBody(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
   ctx.fill();
 }
 
-function drawHead(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number, blink: boolean, mouthOpen: boolean) {
+function drawHead(
+  ctx: CanvasRenderingContext2D,
+  p: CharacterPalette,
+  dy: number,
+  blink: boolean,
+  mouthOpen: boolean,
+) {
   const cy = HEAD_CY + dy;
 
   // Neck
@@ -208,9 +314,9 @@ function drawHead(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
 
   // Head shading gradient
   const g = ctx.createRadialGradient(CX - 4, cy - 4, 1, CX, cy, HEAD_R);
-  g.addColorStop(0, 'rgba(255,255,255,0.12)');
-  g.addColorStop(0.7, 'rgba(0,0,0,0)');
-  g.addColorStop(1, 'rgba(0,0,0,0.06)');
+  g.addColorStop(0, "rgba(255,255,255,0.12)");
+  g.addColorStop(0.7, "rgba(0,0,0,0)");
+  g.addColorStop(1, "rgba(0,0,0,0.06)");
   ctx.fillStyle = g;
   ctx.beginPath();
   ctx.arc(CX, cy, HEAD_R, 0, Math.PI * 2);
@@ -237,7 +343,7 @@ function drawHead(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
   if (blink) {
     ctx.strokeStyle = hex(p.eye);
     ctx.lineWidth = 1.5;
-    ctx.lineCap = 'round';
+    ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(CX - 6, cy + 1);
     ctx.lineTo(CX - 2, cy + 1);
@@ -248,7 +354,7 @@ function drawHead(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
     ctx.stroke();
   } else {
     // Eye whites
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = "#ffffff";
     ctx.beginPath();
     ctx.ellipse(CX - 4, cy + 1, 3.5, 3, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -272,7 +378,7 @@ function drawHead(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
     ctx.arc(CX + 4.5, cy + 1.5, 1.3, 0, Math.PI * 2);
     ctx.fill();
     // Eye highlights
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = "#ffffff";
     ctx.beginPath();
     ctx.arc(CX - 5, cy + 0.3, 1.1, 0, Math.PI * 2);
     ctx.fill();
@@ -291,7 +397,7 @@ function drawHead(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
   // Eyebrows
   ctx.strokeStyle = hex(p.hair);
   ctx.lineWidth = 1.2;
-  ctx.lineCap = 'round';
+  ctx.lineCap = "round";
   ctx.beginPath();
   ctx.moveTo(CX - 6, cy - 3);
   ctx.quadraticCurveTo(CX - 4, cy - 4.5, CX - 1.5, cy - 3);
@@ -303,32 +409,32 @@ function drawHead(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
 
   // Mouth
   if (mouthOpen) {
-    ctx.fillStyle = '#8b0000';
+    ctx.fillStyle = "#8b0000";
     ctx.beginPath();
     ctx.ellipse(CX, cy + 6, 2.5, 1.8, 0, 0, Math.PI * 2);
     ctx.fill();
     // Tongue hint
-    ctx.fillStyle = '#cc4444';
+    ctx.fillStyle = "#cc4444";
     ctx.beginPath();
     ctx.ellipse(CX, cy + 6.8, 1.5, 0.8, 0, 0, Math.PI * 2);
     ctx.fill();
   } else {
     ctx.strokeStyle = hex(p.mouth);
     ctx.lineWidth = 1.2;
-    ctx.lineCap = 'round';
+    ctx.lineCap = "round";
     ctx.beginPath();
     ctx.arc(CX, cy + 4.5, 2.5, 0.2, Math.PI - 0.2);
     ctx.stroke();
   }
 
   // Nose hint
-  ctx.fillStyle = 'rgba(0,0,0,0.06)';
+  ctx.fillStyle = "rgba(0,0,0,0.06)";
   ctx.beginPath();
   ctx.arc(CX, cy + 3.5, 1.2, 0, Math.PI * 2);
   ctx.fill();
 
   // Cheek blush
-  ctx.fillStyle = 'rgba(255,130,130,0.18)';
+  ctx.fillStyle = "rgba(255,130,130,0.18)";
   ctx.beginPath();
   ctx.ellipse(CX - 7, cy + 3.5, 3, 1.8, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -337,13 +443,19 @@ function drawHead(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
   ctx.fill();
 }
 
-function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number, style: number) {
+function drawHair(
+  ctx: CanvasRenderingContext2D,
+  p: CharacterPalette,
+  dy: number,
+  style: number,
+) {
   const cy = HEAD_CY + dy;
   const r = HEAD_R;
   ctx.fillStyle = hex(p.hair);
 
   switch (style % HAIR_STYLE_COUNT) {
-    case 0: { // Short neat
+    case 0: {
+      // Short neat
       ctx.beginPath();
       ctx.arc(CX, cy, r + 2, Math.PI, 0);
       ctx.lineTo(CX + r + 2, cy - 1);
@@ -356,7 +468,8 @@ function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
       ctx.fill();
       break;
     }
-    case 1: { // Side swoop
+    case 1: {
+      // Side swoop
       ctx.beginPath();
       ctx.arc(CX, cy, r + 2, Math.PI - 0.1, 0.1);
       ctx.closePath();
@@ -374,7 +487,8 @@ function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
       ctx.fill();
       break;
     }
-    case 2: { // Long
+    case 2: {
+      // Long
       ctx.beginPath();
       ctx.arc(CX, cy, r + 2, Math.PI - 0.2, 0.2);
       ctx.closePath();
@@ -399,7 +513,8 @@ function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
       ctx.fill();
       break;
     }
-    case 3: { // Spiky
+    case 3: {
+      // Spiky
       ctx.beginPath();
       ctx.arc(CX, cy, r + 1, Math.PI + 0.4, -0.4);
       ctx.fill();
@@ -424,7 +539,8 @@ function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
       ctx.fill();
       break;
     }
-    case 4: { // Curly poof
+    case 4: {
+      // Curly poof
       const bumps = 8;
       for (let i = 0; i < bumps; i++) {
         const a = Math.PI + (i / (bumps - 1)) * Math.PI;
@@ -440,7 +556,8 @@ function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
       ctx.fill();
       break;
     }
-    case 5: { // Top bun / updo
+    case 5: {
+      // Top bun / updo
       // Base cap
       ctx.beginPath();
       ctx.arc(CX, cy, r + 2, Math.PI, 0);
@@ -462,7 +579,8 @@ function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
       ctx.fillRect(CX - 4, cy - r - 1, 8, 2);
       break;
     }
-    case 6: { // Mohawk / faux hawk
+    case 6: {
+      // Mohawk / faux hawk
       // Shaved sides
       ctx.beginPath();
       ctx.arc(CX, cy, r + 1, Math.PI + 0.3, -0.3);
@@ -490,7 +608,8 @@ function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
       }
       break;
     }
-    case 7: { // Bob cut
+    case 7: {
+      // Bob cut
       // Full cap
       ctx.beginPath();
       ctx.arc(CX, cy, r + 2.5, Math.PI - 0.1, 0.1);
@@ -530,9 +649,9 @@ function drawHair(ctx: CanvasRenderingContext2D, p: CharacterPalette, dy: number
 
 function drawGlasses(ctx: CanvasRenderingContext2D, dy: number) {
   const cy = HEAD_CY + dy;
-  ctx.strokeStyle = 'rgba(80,80,100,0.9)';
+  ctx.strokeStyle = "rgba(80,80,100,0.9)";
   ctx.lineWidth = 1.2;
-  ctx.lineCap = 'round';
+  ctx.lineCap = "round";
 
   // Left lens
   ctx.beginPath();
@@ -558,7 +677,7 @@ function drawGlasses(ctx: CanvasRenderingContext2D, dy: number) {
   ctx.stroke();
 
   // Lens glare
-  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
   ctx.beginPath();
   ctx.ellipse(CX - 5, cy - 0.5, 2, 1.5, -0.3, 0, Math.PI * 2);
   ctx.fill();
@@ -583,7 +702,7 @@ function drawCharacterFrame(
   const sY = SHOULDER_Y + dy;
 
   // Shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.fillStyle = "rgba(0,0,0,0.15)";
   ctx.beginPath();
   ctx.ellipse(CX, 45, 12, 3.5, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -624,19 +743,21 @@ function drawCharacterFrame(
 
 // ---- public API ----
 
-export function generateSpriteSheet(palette: CharacterPalette): HTMLCanvasElement {
-  const states: AnimState[] = ['idle', 'walk', 'type', 'think'];
-  const canvas = document.createElement('canvas');
+export function generateSpriteSheet(
+  palette: CharacterPalette,
+): HTMLCanvasElement {
+  const states: AnimState[] = ["idle", "walk", "type", "think"];
+  const canvas = document.createElement("canvas");
   canvas.width = FRAME_PX * 8;
   canvas.height = FRAME_PX;
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext("2d")!;
 
   let fi = 0;
   for (const state of states) {
     for (let f = 0; f < 2; f++) {
       const key = `${state}_${f}`;
       const spec = SPECS[key];
-      drawCharacterFrame(ctx, palette, spec, fi * FRAME_PX, state === 'think');
+      drawCharacterFrame(ctx, palette, spec, fi * FRAME_PX, state === "think");
       fi++;
     }
   }
@@ -647,10 +768,10 @@ export function generateSpriteSheet(palette: CharacterPalette): HTMLCanvasElemen
 export function registerAgentTextures(
   scene: Phaser.Scene,
   agentId: string,
-  palette: CharacterPalette
+  palette: CharacterPalette,
 ): Record<AnimState, string> {
   const sheet = generateSpriteSheet(palette);
-  const states: AnimState[] = ['idle', 'walk', 'type', 'think'];
+  const states: AnimState[] = ["idle", "walk", "type", "think"];
   const keys: Record<string, string> = {};
 
   let frameIdx = 0;
@@ -658,27 +779,37 @@ export function registerAgentTextures(
     const key = `agent_${agentId}_${state}`;
     keys[state] = key;
 
-    const frameCanvas = document.createElement('canvas');
+    const frameCanvas = document.createElement("canvas");
     frameCanvas.width = FRAME_PX * 2;
     frameCanvas.height = FRAME_PX;
-    const fctx = frameCanvas.getContext('2d')!;
+    const fctx = frameCanvas.getContext("2d")!;
     fctx.drawImage(
       sheet,
-      frameIdx * FRAME_PX, 0, FRAME_PX * 2, FRAME_PX,
-      0, 0, FRAME_PX * 2, FRAME_PX
+      frameIdx * FRAME_PX,
+      0,
+      FRAME_PX * 2,
+      FRAME_PX,
+      0,
+      0,
+      FRAME_PX * 2,
+      FRAME_PX,
     );
 
     if (scene.anims.exists(key)) scene.anims.remove(key);
     if (scene.textures.exists(key)) scene.textures.remove(key);
-    scene.textures.addSpriteSheet(key, frameCanvas as unknown as HTMLImageElement, {
-      frameWidth: FRAME_PX,
-      frameHeight: FRAME_PX,
-    });
+    scene.textures.addSpriteSheet(
+      key,
+      frameCanvas as unknown as HTMLImageElement,
+      {
+        frameWidth: FRAME_PX,
+        frameHeight: FRAME_PX,
+      },
+    );
 
     scene.anims.create({
       key,
       frames: scene.anims.generateFrameNumbers(key, { start: 0, end: 1 }),
-      frameRate: state === 'walk' ? 5 : state === 'type' ? 6 : 2,
+      frameRate: state === "walk" ? 5 : state === "type" ? 6 : 2,
       repeat: -1,
     });
 

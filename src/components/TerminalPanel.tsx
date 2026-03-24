@@ -1,6 +1,13 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { listAllFiles, readFile, FileMeta, getWorkspace, pickWorkspace, isRealFs } from '../lib/filesystem';
-import { Agent } from '../lib/types';
+import { useState, useRef, useEffect, useCallback } from "react";
+import {
+  listAllFiles,
+  readFile,
+  FileMeta,
+  getWorkspace,
+  pickWorkspace,
+  isRealFs,
+} from "../lib/filesystem";
+import { Agent } from "../lib/types";
 import {
   isElectron,
   spawnShell,
@@ -9,18 +16,18 @@ import {
   onShellStdout,
   onShellStderr,
   onShellExit,
-} from '../lib/terminal';
+} from "../lib/terminal";
 
 interface TerminalPanelProps {
   agents: Agent[];
   workspaceDir?: string | null;
 }
 
-type TabMode = 'terminal' | 'files';
+type TabMode = "terminal" | "files";
 
 interface ShellLine {
   id: number;
-  type: 'stdout' | 'stderr' | 'input' | 'info';
+  type: "stdout" | "stderr" | "input" | "info";
   text: string;
 }
 
@@ -28,23 +35,25 @@ interface ShellLine {
 
 interface TreeNode {
   name: string;
-  path: string;       // full relative path
+  path: string; // full relative path
   isDir: boolean;
   children: TreeNode[];
-  meta?: FileMeta;     // only for leaf files
+  meta?: FileMeta; // only for leaf files
 }
 
 function buildTree(files: FileMeta[]): TreeNode[] {
-  const root: TreeNode = { name: '', path: '', isDir: true, children: [] };
+  const root: TreeNode = { name: "", path: "", isDir: true, children: [] };
 
   for (const file of files) {
-    const parts = file.path.replace(/^\/+/, '').split('/');
+    const parts = file.path.replace(/^\/+/, "").split("/");
     let current = root;
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
       const isLast = i === parts.length - 1;
-      const childPath = parts.slice(0, i + 1).join('/');
-      let child = current.children.find(c => c.name === part && c.isDir === !isLast);
+      const childPath = parts.slice(0, i + 1).join("/");
+      let child = current.children.find(
+        (c) => c.name === part && c.isDir === !isLast,
+      );
       if (!child) {
         child = {
           name: part,
@@ -74,28 +83,45 @@ function buildTree(files: FileMeta[]): TreeNode[] {
 // ─── File icon helper ────────────────────────────────────────────
 
 function fileIcon(name: string): string {
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
   const map: Record<string, string> = {
-    ts: '🟦', tsx: '⚛️', js: '🟨', jsx: '⚛️',
-    json: '📋', md: '📝', css: '🎨', html: '🌐',
-    py: '🐍', sh: '⚙️', yml: '📄', yaml: '📄',
-    txt: '📄', toml: '📄', lock: '🔒', env: '🔑',
+    ts: "🟦",
+    tsx: "⚛️",
+    js: "🟨",
+    jsx: "⚛️",
+    json: "📋",
+    md: "📝",
+    css: "🎨",
+    html: "🌐",
+    py: "🐍",
+    sh: "⚙️",
+    yml: "📄",
+    yaml: "📄",
+    txt: "📄",
+    toml: "📄",
+    lock: "🔒",
+    env: "🔑",
   };
-  return map[ext] ?? '📄';
+  return map[ext] ?? "📄";
 }
 
 let lineIdCounter = 0;
 
-export default function TerminalPanel({ agents, workspaceDir: wsDirProp }: TerminalPanelProps) {
-  const [mode, setMode] = useState<TabMode>('terminal');
+export default function TerminalPanel({
+  agents,
+  workspaceDir: wsDirProp,
+}: TerminalPanelProps) {
+  const [mode, setMode] = useState<TabMode>("terminal");
   const [files, setFiles] = useState<FileMeta[]>([]);
-  const [workspace, setWorkspaceDir] = useState<string>(wsDirProp || '');
+  const [workspace, setWorkspaceDir] = useState<string>(wsDirProp || "");
   const [expandedFile, setExpandedFile] = useState<string | null>(null);
-  const [expandedFileContent, setExpandedFileContent] = useState<string | null>(null);
+  const [expandedFileContent, setExpandedFileContent] = useState<string | null>(
+    null,
+  );
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
 
   const toggleDir = useCallback((path: string) => {
-    setExpandedDirs(prev => {
+    setExpandedDirs((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
       else next.add(path);
@@ -106,7 +132,7 @@ export default function TerminalPanel({ agents, workspaceDir: wsDirProp }: Termi
   // Shell state
   const [shellId, setShellId] = useState<number | null>(null);
   const [lines, setLines] = useState<ShellLine[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -114,7 +140,7 @@ export default function TerminalPanel({ agents, workspaceDir: wsDirProp }: Termi
 
   // Auto-scroll
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [lines]);
 
   // Sync workspace from parent prop; fall back to getWorkspace() if no prop
@@ -128,9 +154,11 @@ export default function TerminalPanel({ agents, workspaceDir: wsDirProp }: Termi
 
   // Refresh files periodically (only when files tab is active)
   useEffect(() => {
-    if (mode !== 'files') return;
+    if (mode !== "files") return;
     listAllFiles().then(setFiles);
-    const interval = setInterval(() => { listAllFiles().then(setFiles); }, 10000);
+    const interval = setInterval(() => {
+      listAllFiles().then(setFiles);
+    }, 10000);
     return () => clearInterval(interval);
   }, [agents, mode]);
 
@@ -139,22 +167,42 @@ export default function TerminalPanel({ agents, workspaceDir: wsDirProp }: Termi
     if (!workspace) return; // wait until workspace is resolved
 
     if (!isElectron()) {
-      setLines([{ id: ++lineIdCounter, type: 'info', text: 'Terminal requires Electron. Use `npm run electron:dev` to launch.' }]);
+      setLines([
+        {
+          id: ++lineIdCounter,
+          type: "info",
+          text: "Terminal requires Electron. Use `npm run electron:dev` to launch.",
+        },
+      ]);
       return;
     }
 
     let mounted = true;
 
     // Kill any existing shell before spawning in the new cwd
-    setShellId((prev) => { if (prev !== null) killShell(prev); return null; });
-
-    spawnShell(workspace).then((id) => {
-      if (!mounted) { killShell(id); return; }
-      setShellId(id);
-      setLines([{ id: ++lineIdCounter, type: 'info', text: `Shell started in ${workspace} (session ${id})` }]);
+    setShellId((prev) => {
+      if (prev !== null) killShell(prev);
+      return null;
     });
 
-    return () => { mounted = false; };
+    spawnShell(workspace).then((id) => {
+      if (!mounted) {
+        killShell(id);
+        return;
+      }
+      setShellId(id);
+      setLines([
+        {
+          id: ++lineIdCounter,
+          type: "info",
+          text: `Shell started in ${workspace} (session ${id})`,
+        },
+      ]);
+    });
+
+    return () => {
+      mounted = false;
+    };
   }, [workspace]);
 
   // Listen for shell output
@@ -163,51 +211,77 @@ export default function TerminalPanel({ agents, workspaceDir: wsDirProp }: Termi
 
     const unsub1 = onShellStdout((id, data) => {
       if (id !== shellId) return;
-      setLines((prev) => [...prev, { id: ++lineIdCounter, type: 'stdout', text: data }]);
+      setLines((prev) => [
+        ...prev,
+        { id: ++lineIdCounter, type: "stdout", text: data },
+      ]);
     });
 
     const unsub2 = onShellStderr((id, data) => {
       if (id !== shellId) return;
-      setLines((prev) => [...prev, { id: ++lineIdCounter, type: 'stderr', text: data }]);
+      setLines((prev) => [
+        ...prev,
+        { id: ++lineIdCounter, type: "stderr", text: data },
+      ]);
     });
 
     const unsub3 = onShellExit((id, code) => {
       if (id !== shellId) return;
-      setLines((prev) => [...prev, { id: ++lineIdCounter, type: 'info', text: `Shell exited (code ${code})` }]);
+      setLines((prev) => [
+        ...prev,
+        {
+          id: ++lineIdCounter,
+          type: "info",
+          text: `Shell exited (code ${code})`,
+        },
+      ]);
       setShellId(null);
     });
 
-    return () => { unsub1(); unsub2(); unsub3(); };
+    return () => {
+      unsub1();
+      unsub2();
+      unsub3();
+    };
   }, [shellId]);
 
   const handleSend = useCallback(() => {
     if (!input.trim() || shellId === null) return;
     const cmd = input;
-    setLines((prev) => [...prev, { id: ++lineIdCounter, type: 'input', text: `$ ${cmd}` }]);
-    writeShell(shellId, cmd + '\n');
+    setLines((prev) => [
+      ...prev,
+      { id: ++lineIdCounter, type: "input", text: `$ ${cmd}` },
+    ]);
+    writeShell(shellId, cmd + "\n");
     setHistory((prev) => [...prev, cmd]);
     setHistoryIdx(-1);
-    setInput('');
+    setInput("");
   }, [input, shellId]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       e.preventDefault();
       handleSend();
-    } else if (e.key === 'ArrowUp') {
+    } else if (e.key === "ArrowUp") {
       e.preventDefault();
       if (history.length === 0) return;
-      const next = historyIdx < 0 ? history.length - 1 : Math.max(0, historyIdx - 1);
+      const next =
+        historyIdx < 0 ? history.length - 1 : Math.max(0, historyIdx - 1);
       setHistoryIdx(next);
       setInput(history[next]);
-    } else if (e.key === 'ArrowDown') {
+    } else if (e.key === "ArrowDown") {
       e.preventDefault();
       if (historyIdx < 0) return;
       const next = historyIdx + 1;
-      if (next >= history.length) { setHistoryIdx(-1); setInput(''); }
-      else { setHistoryIdx(next); setInput(history[next]); }
-    } else if (e.key === 'c' && e.ctrlKey) {
-      if (shellId !== null) writeShell(shellId, '\x03');
+      if (next >= history.length) {
+        setHistoryIdx(-1);
+        setInput("");
+      } else {
+        setHistoryIdx(next);
+        setInput(history[next]);
+      }
+    } else if (e.key === "c" && e.ctrlKey) {
+      if (shellId !== null) writeShell(shellId, "\x03");
     }
   }
 
@@ -216,7 +290,13 @@ export default function TerminalPanel({ agents, workspaceDir: wsDirProp }: Termi
     setLines([]);
     spawnShell(workspace || undefined).then((id) => {
       setShellId(id);
-      setLines([{ id: ++lineIdCounter, type: 'info', text: `Shell restarted (session ${id})` }]);
+      setLines([
+        {
+          id: ++lineIdCounter,
+          type: "info",
+          text: `Shell restarted (session ${id})`,
+        },
+      ]);
     });
   }
 
@@ -225,14 +305,14 @@ export default function TerminalPanel({ agents, workspaceDir: wsDirProp }: Termi
       {/* Sub-tabs */}
       <div className="flex border-b border-slate-700 bg-slate-900">
         <button
-          onClick={() => setMode('terminal')}
-          className={`flex-1 py-1.5 text-[11px] font-pixel transition-colors ${mode === 'terminal' ? 'text-green-400 border-b-2 border-green-500 bg-slate-800' : 'text-slate-400 hover:text-slate-200'}`}
+          onClick={() => setMode("terminal")}
+          className={`flex-1 py-1.5 text-[11px] font-pixel transition-colors ${mode === "terminal" ? "text-green-400 border-b-2 border-green-500 bg-slate-800" : "text-slate-400 hover:text-slate-200"}`}
         >
-          {'>'} Terminal
+          {">"} Terminal
         </button>
         <button
-          onClick={() => setMode('files')}
-          className={`flex-1 py-1.5 text-[11px] font-pixel transition-colors ${mode === 'files' ? 'text-green-400 border-b-2 border-green-500 bg-slate-800' : 'text-slate-400 hover:text-slate-200'}`}
+          onClick={() => setMode("files")}
+          className={`flex-1 py-1.5 text-[11px] font-pixel transition-colors ${mode === "files" ? "text-green-400 border-b-2 border-green-500 bg-slate-800" : "text-slate-400 hover:text-slate-200"}`}
         >
           📁 Files ({files.length})
         </button>
@@ -241,11 +321,21 @@ export default function TerminalPanel({ agents, workspaceDir: wsDirProp }: Termi
       {/* Workspace indicator */}
       {isRealFs() && (
         <div className="flex items-center gap-2 px-3 py-1 bg-slate-900/60 border-b border-slate-700">
-          <span className="text-[12px] font-mono text-slate-400 truncate flex-1" title={workspace}>
+          <span
+            className="text-[12px] font-mono text-slate-400 truncate flex-1"
+            title={workspace}
+          >
             📂 {workspace}
           </span>
           <button
-            onClick={() => pickWorkspace().then(dir => { if (dir) { setWorkspaceDir(dir); listAllFiles().then(setFiles); } })}
+            onClick={() =>
+              pickWorkspace().then((dir) => {
+                if (dir) {
+                  setWorkspaceDir(dir);
+                  listAllFiles().then(setFiles);
+                }
+              })
+            }
             className="text-[12px] font-pixel text-slate-400 hover:text-green-400 transition-colors shrink-0"
           >
             change
@@ -253,17 +343,18 @@ export default function TerminalPanel({ agents, workspaceDir: wsDirProp }: Termi
         </div>
       )}
 
-      {mode === 'files' ? (
+      {mode === "files" ? (
         /* ─── File Browser (Tree View) ─── */
         <div className="flex-1 overflow-y-auto">
           {files.length === 0 ? (
             <div className="text-slate-400 text-[11px] font-mono text-center pt-8 px-3">
-              No files yet.<br />
+              No files yet.
+              <br />
               Ask an agent to write code and files will appear here.
             </div>
           ) : (
             <div className="py-1">
-              {buildTree(files).map(node => (
+              {buildTree(files).map((node) => (
                 <FileTreeNode
                   key={node.path}
                   node={node}
@@ -282,7 +373,7 @@ export default function TerminalPanel({ agents, workspaceDir: wsDirProp }: Termi
         <>
           <div className="flex items-center justify-between px-3 py-1 bg-slate-900 border-b border-slate-700">
             <span className="text-[12px] font-mono text-slate-400">
-              {shellId !== null ? `zsh · session ${shellId}` : 'disconnected'}
+              {shellId !== null ? `zsh · session ${shellId}` : "disconnected"}
             </span>
             <button
               onClick={handleRestart}
@@ -299,10 +390,13 @@ export default function TerminalPanel({ agents, workspaceDir: wsDirProp }: Termi
               <div
                 key={line.id}
                 className={`whitespace-pre-wrap break-all ${
-                  line.type === 'stderr' ? 'text-red-400' :
-                  line.type === 'input' ? 'text-cyan-400' :
-                  line.type === 'info' ? 'text-slate-400 italic' :
-                  'text-slate-200'
+                  line.type === "stderr"
+                    ? "text-red-400"
+                    : line.type === "input"
+                      ? "text-cyan-400"
+                      : line.type === "info"
+                        ? "text-slate-400 italic"
+                        : "text-slate-200"
                 }`}
               >
                 {line.text}
@@ -312,13 +406,17 @@ export default function TerminalPanel({ agents, workspaceDir: wsDirProp }: Termi
           </div>
           <div className="px-3 py-2 border-t border-slate-700 bg-slate-900">
             <div className="flex items-center gap-2">
-              <span className="text-[12px] font-mono text-green-400 shrink-0">$</span>
+              <span className="text-[12px] font-mono text-green-400 shrink-0">
+                $
+              </span>
               <input
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={shellId !== null ? 'Type a command...' : 'Shell not connected'}
+                placeholder={
+                  shellId !== null ? "Type a command..." : "Shell not connected"
+                }
                 disabled={shellId === null}
                 className="flex-1 bg-transparent border-none text-[12px] font-mono text-green-300 placeholder-slate-400 focus:outline-none disabled:opacity-50"
                 autoFocus
@@ -342,7 +440,14 @@ interface FileTreeNodeProps {
   setExpandedFile: (path: string | null) => void;
 }
 
-function FileTreeNode({ node, depth, expandedDirs, toggleDir, expandedFile, setExpandedFile }: FileTreeNodeProps) {
+function FileTreeNode({
+  node,
+  depth,
+  expandedDirs,
+  toggleDir,
+  expandedFile,
+  setExpandedFile,
+}: FileTreeNodeProps) {
   const indent = depth * 16;
   const isOpen = expandedDirs.has(node.path);
 
@@ -355,25 +460,28 @@ function FileTreeNode({ node, depth, expandedDirs, toggleDir, expandedFile, setE
           style={{ paddingLeft: `${8 + indent}px` }}
         >
           <span className="text-[11px] text-slate-400 w-3 text-center shrink-0">
-            {isOpen ? '▾' : '▸'}
+            {isOpen ? "▾" : "▸"}
           </span>
-          <span className="text-[12px] shrink-0">{isOpen ? '📂' : '📁'}</span>
-          <span className="text-[12px] font-mono text-slate-200 truncate">{node.name}</span>
+          <span className="text-[12px] shrink-0">{isOpen ? "📂" : "📁"}</span>
+          <span className="text-[12px] font-mono text-slate-200 truncate">
+            {node.name}
+          </span>
           <span className="text-[12px] font-mono text-slate-400 ml-auto pr-3 opacity-0 group-hover:opacity-100 transition-opacity">
             {node.children.length}
           </span>
         </button>
-        {isOpen && node.children.map(child => (
-          <FileTreeNode
-            key={child.path}
-            node={child}
-            depth={depth + 1}
-            expandedDirs={expandedDirs}
-            toggleDir={toggleDir}
-            expandedFile={expandedFile}
-            setExpandedFile={setExpandedFile}
-          />
-        ))}
+        {isOpen &&
+          node.children.map((child) => (
+            <FileTreeNode
+              key={child.path}
+              node={child}
+              depth={depth + 1}
+              expandedDirs={expandedDirs}
+              toggleDir={toggleDir}
+              expandedFile={expandedFile}
+              setExpandedFile={setExpandedFile}
+            />
+          ))}
       </>
     );
   }
@@ -383,11 +491,13 @@ function FileTreeNode({ node, depth, expandedDirs, toggleDir, expandedFile, setE
     <>
       <button
         onClick={() => setExpandedFile(isExpanded ? null : node.path)}
-        className={`w-full flex items-center gap-1.5 py-[3px] hover:bg-slate-800/60 transition-colors text-left ${isExpanded ? 'bg-slate-800/40' : ''}`}
+        className={`w-full flex items-center gap-1.5 py-[3px] hover:bg-slate-800/60 transition-colors text-left ${isExpanded ? "bg-slate-800/40" : ""}`}
         style={{ paddingLeft: `${8 + indent + 16}px` }}
       >
         <span className="text-[12px] shrink-0">{fileIcon(node.name)}</span>
-        <span className={`text-[12px] font-mono truncate ${isExpanded ? 'text-green-400' : 'text-slate-300'}`}>
+        <span
+          className={`text-[12px] font-mono truncate ${isExpanded ? "text-green-400" : "text-slate-300"}`}
+        >
           {node.name}
         </span>
         {node.file && (
@@ -399,7 +509,12 @@ function FileTreeNode({ node, depth, expandedDirs, toggleDir, expandedFile, setE
       {isExpanded && node.file && (
         <pre
           className="bg-slate-900/80 text-[12px] font-mono text-slate-200 overflow-x-auto whitespace-pre-wrap break-all leading-7 max-h-64 overflow-y-auto border-t border-b border-slate-700/50"
-          style={{ paddingLeft: `${8 + indent + 16}px`, paddingRight: 12, paddingTop: 6, paddingBottom: 6 }}
+          style={{
+            paddingLeft: `${8 + indent + 16}px`,
+            paddingRight: 12,
+            paddingTop: 6,
+            paddingBottom: 6,
+          }}
         >
           {node.file.content}
         </pre>

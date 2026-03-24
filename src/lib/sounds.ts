@@ -9,7 +9,12 @@ function getCtx(): AudioContext {
 }
 
 /** Play a short tone sequence */
-function playTone(freq: number, duration: number, type: OscillatorType = 'square', volume = 0.15) {
+function playTone(
+  freq: number,
+  duration: number,
+  type: OscillatorType = "square",
+  volume = 0.15,
+) {
   const ctx = getCtx();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -28,21 +33,21 @@ export function playTaskComplete() {
   const notes = [523, 659, 784, 1047]; // C5 E5 G5 C6
   notes.forEach((freq, i) => {
     setTimeout(() => {
-      playTone(freq, 0.15, 'square', 0.12);
+      playTone(freq, 0.15, "square", 0.12);
     }, i * 80);
   });
 }
 
 /** Approval needed — alert double-beep */
 export function playApprovalNeeded() {
-  playTone(880, 0.1, 'square', 0.15);
-  setTimeout(() => playTone(880, 0.1, 'square', 0.15), 150);
+  playTone(880, 0.1, "square", 0.15);
+  setTimeout(() => playTone(880, 0.1, "square", 0.15), 150);
 }
 
 /** Agent stuck — descending warning */
 export function playAgentStuck() {
-  playTone(440, 0.15, 'sawtooth', 0.1);
-  setTimeout(() => playTone(330, 0.2, 'sawtooth', 0.1), 180);
+  playTone(440, 0.15, "sawtooth", 0.1);
+  setTimeout(() => playTone(330, 0.2, "sawtooth", 0.1), 180);
 }
 
 /** Orchestration complete — victory fanfare */
@@ -50,36 +55,36 @@ export function playOrchestrationComplete() {
   const notes = [523, 659, 784, 1047, 1319]; // C5 E5 G5 C6 E6
   notes.forEach((freq, i) => {
     setTimeout(() => {
-      playTone(freq, 0.2, 'square', 0.1);
+      playTone(freq, 0.2, "square", 0.1);
     }, i * 100);
   });
 }
 
 /** Orchestration had failures — somber tone */
 export function playOrchestrationWarning() {
-  playTone(392, 0.2, 'triangle', 0.12);
-  setTimeout(() => playTone(330, 0.3, 'triangle', 0.12), 220);
+  playTone(392, 0.2, "triangle", 0.12);
+  setTimeout(() => playTone(330, 0.3, "triangle", 0.12), 220);
 }
 
 /** Generic notification pop */
 export function playNotificationPop() {
-  playTone(1200, 0.06, 'square', 0.08);
+  playTone(1200, 0.06, "square", 0.08);
 }
 
 /** Check if sounds are enabled (user preference) */
 export function getSoundsEnabled(): boolean {
-  return localStorage.getItem('outworked_sounds') !== '0';
+  return localStorage.getItem("outworked_sounds") !== "0";
 }
 
 export function setSoundsEnabled(enabled: boolean) {
-  localStorage.setItem('outworked_sounds', enabled ? '1' : '0');
+  localStorage.setItem("outworked_sounds", enabled ? "1" : "0");
 }
 
 /** Check if desktop notifications are enabled */
 export function getDesktopNotificationsEnabled(): boolean {
-  return localStorage.getItem('outworked_desktop_notifs') !== '0';
+  return localStorage.getItem("outworked_desktop_notifs") !== "0";
 }
 
 export function setDesktopNotificationsEnabled(enabled: boolean) {
-  localStorage.setItem('outworked_desktop_notifs', enabled ? '1' : '0');
+  localStorage.setItem("outworked_desktop_notifs", enabled ? "1" : "0");
 }

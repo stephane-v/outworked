@@ -1,11 +1,14 @@
-import { Message, Session, SessionMeta } from './types';
-import { v4 as uuidv4 } from 'uuid';
+import { Message, Session, SessionMeta } from "./types";
+import { v4 as uuidv4 } from "uuid";
 
 // ─── Electron IPC bridge ──────────────────────────────────────────
 
 function getAPI(): {
   save: (session: Session) => Promise<{ ok: boolean }>;
-  load: (agentId: string, sessionId: string) => Promise<{ ok: boolean; session?: Session }>;
+  load: (
+    agentId: string,
+    sessionId: string,
+  ) => Promise<{ ok: boolean; session?: Session }>;
   list: (agentId: string) => Promise<SessionMeta[]>;
   delete: (agentId: string, sessionId: string) => Promise<{ ok: boolean }>;
   search: (agentId: string, query: string) => Promise<SessionMeta[]>;
@@ -16,7 +19,7 @@ function getAPI(): {
 
 // ─── localStorage fallback keys ───────────────────────────────────
 
-const LS_PREFIX = 'outworked_session_';
+const LS_PREFIX = "outworked_session_";
 
 function lsKey(agentId: string, sessionId: string) {
   return `${LS_PREFIX}${agentId}_${sessionId}`;
@@ -30,7 +33,9 @@ function lsGetIndex(agentId: string): SessionMeta[] {
   try {
     const raw = localStorage.getItem(lsIndexKey(agentId));
     return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 function lsSaveIndex(agentId: string, index: SessionMeta[]) {
@@ -40,11 +45,11 @@ function lsSaveIndex(agentId: string, index: SessionMeta[]) {
 // ─── Public API ───────────────────────────────────────────────────
 
 export function generateTitle(firstMessage: string): string {
-  const cleaned = firstMessage.replace(/\n/g, ' ').trim();
+  const cleaned = firstMessage.replace(/\n/g, " ").trim();
   if (cleaned.length <= 50) return cleaned;
   const cut = cleaned.slice(0, 50);
-  const lastSpace = cut.lastIndexOf(' ');
-  return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + '…';
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + "…";
 }
 
 export function createSession(agentId: string, firstMessage?: string): Session {
@@ -52,7 +57,7 @@ export function createSession(agentId: string, firstMessage?: string): Session {
   return {
     id: uuidv4(),
     agentId,
-    title: firstMessage ? generateTitle(firstMessage) : 'New conversation',
+    title: firstMessage ? generateTitle(firstMessage) : "New conversation",
     createdAt: now,
     updatedAt: now,
     messageCount: 0,
@@ -75,7 +80,10 @@ export async function saveSession(session: Session): Promise<boolean> {
 
   // localStorage fallback
   try {
-    localStorage.setItem(lsKey(updated.agentId, updated.id), JSON.stringify(updated));
+    localStorage.setItem(
+      lsKey(updated.agentId, updated.id),
+      JSON.stringify(updated),
+    );
     const index = lsGetIndex(updated.agentId);
     const meta: SessionMeta = {
       id: updated.id,
@@ -87,14 +95,19 @@ export async function saveSession(session: Session): Promise<boolean> {
       messageCount: updated.messageCount,
       totalCostUsd: updated.totalCostUsd,
     };
-    const filtered = index.filter(m => m.id !== updated.id);
+    const filtered = index.filter((m) => m.id !== updated.id);
     filtered.unshift(meta);
     lsSaveIndex(updated.agentId, filtered);
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
-export async function loadSession(agentId: string, sessionId: string): Promise<Session | null> {
+export async function loadSession(
+  agentId: string,
+  sessionId: string,
+): Promise<Session | null> {
   const api = getAPI();
   if (api) {
     const result = await api.load(agentId, sessionId);
@@ -105,7 +118,9 @@ export async function loadSession(agentId: string, sessionId: string): Promise<S
   try {
     const raw = localStorage.getItem(lsKey(agentId, sessionId));
     return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export async function listSessions(agentId: string): Promise<SessionMeta[]> {
@@ -116,7 +131,10 @@ export async function listSessions(agentId: string): Promise<SessionMeta[]> {
   return lsGetIndex(agentId);
 }
 
-export async function deleteSession(agentId: string, sessionId: string): Promise<boolean> {
+export async function deleteSession(
+  agentId: string,
+  sessionId: string,
+): Promise<boolean> {
   const api = getAPI();
   if (api) {
     const result = await api.delete(agentId, sessionId);
@@ -125,13 +143,18 @@ export async function deleteSession(agentId: string, sessionId: string): Promise
 
   try {
     localStorage.removeItem(lsKey(agentId, sessionId));
-    const index = lsGetIndex(agentId).filter(m => m.id !== sessionId);
+    const index = lsGetIndex(agentId).filter((m) => m.id !== sessionId);
     lsSaveIndex(agentId, index);
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
-export async function searchSessions(agentId: string, query: string): Promise<SessionMeta[]> {
+export async function searchSessions(
+  agentId: string,
+  query: string,
+): Promise<SessionMeta[]> {
   const api = getAPI();
   if (api) {
     return api.search(agentId, query);
@@ -139,7 +162,7 @@ export async function searchSessions(agentId: string, query: string): Promise<Se
 
   // localStorage fallback: search index titles only
   const q = query.toLowerCase();
-  return lsGetIndex(agentId).filter(m => m.title.toLowerCase().includes(q));
+  return lsGetIndex(agentId).filter((m) => m.title.toLowerCase().includes(q));
 }
 
 /**
@@ -153,7 +176,7 @@ export async function migrateHistoryToSession(
 ): Promise<Session | null> {
   if (!history || history.length === 0) return null;
 
-  const firstUserMsg = history.find(m => m.role === 'user');
+  const firstUserMsg = history.find((m) => m.role === "user");
   const session = createSession(agentId, firstUserMsg?.content);
   session.messages = history;
   session.claudeSessionId = claudeSessionId;

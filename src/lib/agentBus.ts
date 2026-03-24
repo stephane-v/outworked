@@ -1,7 +1,7 @@
 // Agent-to-agent message bus
 // Tracks inter-agent exchanges for the current orchestration run (not persisted)
 
-import { AgentMessage } from './types';
+import { AgentMessage } from "./types";
 
 let exchanges: AgentMessage[] = [];
 
@@ -39,7 +39,9 @@ export function clearExchanges(): void {
  * Parse [ASK:AgentName] question patterns from agent output.
  * Returns array of { agentName, question } or empty array if none found.
  */
-export function parseAskRequests(text: string): { agentName: string; question: string }[] {
+export function parseAskRequests(
+  text: string,
+): { agentName: string; question: string }[] {
   const results: { agentName: string; question: string }[] = [];
   const regex = /\[ASK:([^\]]+)\]\s*([^\[]+)/g;
   let match;

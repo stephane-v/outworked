@@ -1,6 +1,11 @@
-import Phaser from 'phaser';
-import { Agent, AGENT_COLORS } from '../lib/types';
-import { buildPalette, registerAgentTextures, FRAME_PX, AnimState } from './SpriteGen';
+import Phaser from "phaser";
+import { Agent, AGENT_COLORS } from "../lib/types";
+import {
+  buildPalette,
+  registerAgentTextures,
+  FRAME_PX,
+  AnimState,
+} from "./SpriteGen";
 
 const TILE = 48;
 
@@ -79,9 +84,29 @@ interface DustMote {
 
 export interface FurnitureItem {
   id: string;
-  type: 'desk' | 'plant' | 'whiteboard' | 'bookshelf' | 'coffee-machine' | 'water-cooler'
-    | 'printer' | 'filing-cabinet' | 'couch' | 'standing-lamp' | 'wall-clock' | 'coat-rack' | 'snack-machine' | 'cactus'
-    | 'tv' | 'ping-pong' | 'trash-can' | 'server-rack' | 'fire-extinguisher' | 'umbrella-stand' | 'mini-fridge' | 'fan';
+  type:
+    | "desk"
+    | "plant"
+    | "whiteboard"
+    | "bookshelf"
+    | "coffee-machine"
+    | "water-cooler"
+    | "printer"
+    | "filing-cabinet"
+    | "couch"
+    | "standing-lamp"
+    | "wall-clock"
+    | "coat-rack"
+    | "snack-machine"
+    | "cactus"
+    | "tv"
+    | "ping-pong"
+    | "trash-can"
+    | "server-rack"
+    | "fire-extinguisher"
+    | "umbrella-stand"
+    | "mini-fridge"
+    | "fan";
   x: number; // tile x
   y: number; // tile y
 }
@@ -105,8 +130,19 @@ export class OfficeScene extends Phaser.Scene {
   /** All background scene objects (lights, dead zone, vignettes) — destroyed on resize */
   private bgObjects: Phaser.GameObjects.GameObject[] = [];
   private deskPositions: { x: number; y: number }[] = []; // tile positions of desk chairs
-  private agentSnapshot: Map<string, { status: string; name: string; role: string; color: string; thought: string; collaboratingWith?: string }> = new Map();
-  private collaborationLines: Map<string, Phaser.GameObjects.Graphics> = new Map();
+  private agentSnapshot: Map<
+    string,
+    {
+      status: string;
+      name: string;
+      role: string;
+      color: string;
+      thought: string;
+      collaboratingWith?: string;
+    }
+  > = new Map();
+  private collaborationLines: Map<string, Phaser.GameObjects.Graphics> =
+    new Map();
   private resizeTimer?: ReturnType<typeof setTimeout>;
 
   // ── Drag-and-drop ──
@@ -116,17 +152,19 @@ export class OfficeScene extends Phaser.Scene {
   private dragShadow?: Phaser.GameObjects.Graphics;
 
   // ── Furniture containers ──
-  private furnitureContainers: Map<string, Phaser.GameObjects.Container> = new Map();
+  private furnitureContainers: Map<string, Phaser.GameObjects.Container> =
+    new Map();
   private furnitureItems: FurnitureItem[] = [];
   private savedLayout: FurnitureItem[] | null = null;
 
   // ── Ambient particles ──
   private dustMotes: DustMote[] = [];
   private dustGraphics?: Phaser.GameObjects.Graphics;
-  private windowBeamZones: { x: number; y1: number; y2: number; w: number }[] = [];
+  private windowBeamZones: { x: number; y1: number; y2: number; w: number }[] =
+    [];
 
   constructor() {
-    super({ key: 'OfficeScene' });
+    super({ key: "OfficeScene" });
   }
 
   setOnAgentClick(cb: (agent: Agent) => void) {
@@ -158,109 +196,131 @@ export class OfficeScene extends Phaser.Scene {
     this.ready = true;
 
     // Enable drag input
-    this.input.on('drag', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Container, dragX: number, dragY: number) => {
-      gameObject.x = dragX;
-      gameObject.y = dragY;
-      this.updateGridOverlay(dragX, dragY);
-      if (this.dragShadow) {
-        this.dragShadow.setPosition(dragX + 3, dragY + 3);
-      }
-    });
-
-    this.input.on('dragstart', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Container) => {
-      this.isDragging = true;
-      this.dragTarget = gameObject;
-      gameObject.setDepth(50);
-      // Lift effect
-      this.tweens.add({
-        targets: gameObject,
-        scaleX: 1.15,
-        scaleY: 1.15,
-        duration: 150,
-        ease: 'Back.easeOut',
-      });
-      this.showGridOverlay();
-      // Create drop shadow
-      this.dragShadow = this.add.graphics();
-      this.dragShadow.setDepth(49);
-      this.dragShadow.fillStyle(0x000000, 0.2);
-      this.dragShadow.fillCircle(0, 0, 22);
-      this.dragShadow.setPosition(gameObject.x + 3, gameObject.y + 3);
-
-      // If it's an agent, cancel their walk/bob tweens
-      const agentId = gameObject.getData('agentId') as string | undefined;
-      if (agentId) {
-        this.tweens.killTweensOf(gameObject);
-        const timer = this.walkTimers.get(agentId);
-        if (timer) {
-          timer.destroy();
-          this.walkTimers.delete(agentId);
+    this.input.on(
+      "drag",
+      (
+        _pointer: Phaser.Input.Pointer,
+        gameObject: Phaser.GameObjects.Container,
+        dragX: number,
+        dragY: number,
+      ) => {
+        gameObject.x = dragX;
+        gameObject.y = dragY;
+        this.updateGridOverlay(dragX, dragY);
+        if (this.dragShadow) {
+          this.dragShadow.setPosition(dragX + 3, dragY + 3);
         }
-      }
-    });
+      },
+    );
 
-    this.input.on('dragend', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Container) => {
-      this.isDragging = false;
-      this.dragTarget = null;
-      this.hideGridOverlay();
+    this.input.on(
+      "dragstart",
+      (
+        _pointer: Phaser.Input.Pointer,
+        gameObject: Phaser.GameObjects.Container,
+      ) => {
+        this.isDragging = true;
+        this.dragTarget = gameObject;
+        gameObject.setDepth(50);
+        // Lift effect
+        this.tweens.add({
+          targets: gameObject,
+          scaleX: 1.15,
+          scaleY: 1.15,
+          duration: 150,
+          ease: "Back.easeOut",
+        });
+        this.showGridOverlay();
+        // Create drop shadow
+        this.dragShadow = this.add.graphics();
+        this.dragShadow.setDepth(49);
+        this.dragShadow.fillStyle(0x000000, 0.2);
+        this.dragShadow.fillCircle(0, 0, 22);
+        this.dragShadow.setPosition(gameObject.x + 3, gameObject.y + 3);
 
-      if (this.dragShadow) {
-        this.dragShadow.destroy();
-        this.dragShadow = undefined;
-      }
-
-      // Snap to grid
-      const snapped = this.snapToGrid(gameObject.x, gameObject.y);
-
-      // Bounce down to final position
-      this.tweens.add({
-        targets: gameObject,
-        x: snapped.px,
-        y: snapped.py,
-        scaleX: 1,
-        scaleY: 1,
-        duration: 250,
-        ease: 'Bounce.easeOut',
-      });
-
-      const agentId = gameObject.getData('agentId') as string | undefined;
-      const furnitureId = gameObject.getData('furnitureId') as string | undefined;
-
-      if (agentId) {
-        gameObject.setDepth(10);
-        // Update agent position
-        const agent = this.agents.find(a => a.id === agentId);
-        if (agent) {
-          agent.position.x = snapped.tileX;
-          agent.position.y = snapped.tileY;
-          // Restart idle behaviors
-          if (agent.status === 'idle') {
-            this.time.delayedCall(300, () => {
-              this.startIdleBob(gameObject, snapped.py);
-              this.scheduleWalk(agentId);
-            });
-          }
-          if (this.onAgentMove) {
-            this.onAgentMove(agentId, snapped.tileX, snapped.tileY);
+        // If it's an agent, cancel their walk/bob tweens
+        const agentId = gameObject.getData("agentId") as string | undefined;
+        if (agentId) {
+          this.tweens.killTweensOf(gameObject);
+          const timer = this.walkTimers.get(agentId);
+          if (timer) {
+            timer.destroy();
+            this.walkTimers.delete(agentId);
           }
         }
-      } else if (furnitureId) {
-        gameObject.setDepth(5);
-        // Update furniture position
-        const item = this.furnitureItems.find(f => f.id === furnitureId);
-        if (item) {
-          item.x = snapped.tileX;
-          item.y = snapped.tileY;
-          // Update desk positions if it's a desk
-          this.rebuildDeskPositions();
-          if (this.onFurnitureMove) {
-            this.onFurnitureMove([...this.furnitureItems]);
+      },
+    );
+
+    this.input.on(
+      "dragend",
+      (
+        _pointer: Phaser.Input.Pointer,
+        gameObject: Phaser.GameObjects.Container,
+      ) => {
+        this.isDragging = false;
+        this.dragTarget = null;
+        this.hideGridOverlay();
+
+        if (this.dragShadow) {
+          this.dragShadow.destroy();
+          this.dragShadow = undefined;
+        }
+
+        // Snap to grid
+        const snapped = this.snapToGrid(gameObject.x, gameObject.y);
+
+        // Bounce down to final position
+        this.tweens.add({
+          targets: gameObject,
+          x: snapped.px,
+          y: snapped.py,
+          scaleX: 1,
+          scaleY: 1,
+          duration: 250,
+          ease: "Bounce.easeOut",
+        });
+
+        const agentId = gameObject.getData("agentId") as string | undefined;
+        const furnitureId = gameObject.getData("furnitureId") as
+          | string
+          | undefined;
+
+        if (agentId) {
+          gameObject.setDepth(10);
+          // Update agent position
+          const agent = this.agents.find((a) => a.id === agentId);
+          if (agent) {
+            agent.position.x = snapped.tileX;
+            agent.position.y = snapped.tileY;
+            // Restart idle behaviors
+            if (agent.status === "idle") {
+              this.time.delayedCall(300, () => {
+                this.startIdleBob(gameObject, snapped.py);
+                this.scheduleWalk(agentId);
+              });
+            }
+            if (this.onAgentMove) {
+              this.onAgentMove(agentId, snapped.tileX, snapped.tileY);
+            }
+          }
+        } else if (furnitureId) {
+          gameObject.setDepth(5);
+          // Update furniture position
+          const item = this.furnitureItems.find((f) => f.id === furnitureId);
+          if (item) {
+            item.x = snapped.tileX;
+            item.y = snapped.tileY;
+            // Update desk positions if it's a desk
+            this.rebuildDeskPositions();
+            if (this.onFurnitureMove) {
+              this.onFurnitureMove([...this.furnitureItems]);
+            }
           }
         }
-      }
-    });
+      },
+    );
 
-    this.scale.on('resize', () => {
+    this.scale.on("resize", () => {
       if (this.resizeTimer) clearTimeout(this.resizeTimer);
       this.resizeTimer = setTimeout(() => {
         if (!this.scene.isActive() || !this.sys.game) return;
@@ -273,7 +333,7 @@ export class OfficeScene extends Phaser.Scene {
       this.fullRebuildAgents();
     }
 
-    this.events.on('shutdown', () => {
+    this.events.on("shutdown", () => {
       if (this.resizeTimer) {
         clearTimeout(this.resizeTimer);
         this.resizeTimer = undefined;
@@ -297,7 +357,7 @@ export class OfficeScene extends Phaser.Scene {
       this.officeGraphics = undefined;
     }
     // Furniture
-    this.furnitureContainers.forEach(c => c.destroy());
+    this.furnitureContainers.forEach((c) => c.destroy());
     this.furnitureContainers.clear();
     // Dust particles
     if (this.dustGraphics) {
@@ -355,7 +415,10 @@ export class OfficeScene extends Phaser.Scene {
         snap.color !== agent.color
       ) {
         toRebuild.add(agent.id);
-      } else if (snap.status !== agent.status || snap.collaboratingWith !== agent.collaboratingWith) {
+      } else if (
+        snap.status !== agent.status ||
+        snap.collaboratingWith !== agent.collaboratingWith
+      ) {
         toTransition.add(agent.id);
       }
     }
@@ -383,11 +446,13 @@ export class OfficeScene extends Phaser.Scene {
     for (const agent of agents) {
       if (toRebuild.has(agent.id) || toTransition.has(agent.id)) continue;
       const snap = this.agentSnapshot.get(agent.id);
-      if (snap && snap.thought !== (agent.currentThought ?? '')) {
+      if (snap && snap.thought !== (agent.currentThought ?? "")) {
         this.agentSnapshot.set(agent.id, {
-          status: agent.status, name: agent.name,
-          role: agent.role, color: agent.color,
-          thought: agent.currentThought ?? '',
+          status: agent.status,
+          name: agent.name,
+          role: agent.role,
+          color: agent.color,
+          thought: agent.currentThought ?? "",
           collaboratingWith: agent.collaboratingWith,
         });
         if (this.thoughtBubbles.has(agent.id)) {
@@ -408,7 +473,9 @@ export class OfficeScene extends Phaser.Scene {
   setSelectedAgent(id: string | null) {
     this.selectedAgentId = id;
     this.agentSprites.forEach((container, agentId) => {
-      const highlight = container.getByName('highlight') as Phaser.GameObjects.Graphics | null;
+      const highlight = container.getByName(
+        "highlight",
+      ) as Phaser.GameObjects.Graphics | null;
       if (highlight) {
         highlight.setVisible(agentId === id);
       }
@@ -425,8 +492,14 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private snapToGrid(px: number, py: number) {
-    const tileX = Math.max(0, Math.min(this.cols - 1, Math.round(px / TILE - 0.5)));
-    const tileY = Math.max(0, Math.min(this.rows - 1, Math.round(py / TILE - 0.5)));
+    const tileX = Math.max(
+      0,
+      Math.min(this.cols - 1, Math.round(px / TILE - 0.5)),
+    );
+    const tileY = Math.max(
+      0,
+      Math.min(this.rows - 1, Math.round(py / TILE - 0.5)),
+    );
     return {
       tileX,
       tileY,
@@ -462,9 +535,19 @@ export class OfficeScene extends Phaser.Scene {
     // Highlight target cell
     const snapped = this.snapToGrid(px, py);
     this.gridOverlay.fillStyle(0x6366f1, 0.15);
-    this.gridOverlay.fillRect(snapped.tileX * TILE, snapped.tileY * TILE, TILE, TILE);
+    this.gridOverlay.fillRect(
+      snapped.tileX * TILE,
+      snapped.tileY * TILE,
+      TILE,
+      TILE,
+    );
     this.gridOverlay.lineStyle(2, 0x6366f1, 0.4);
-    this.gridOverlay.strokeRect(snapped.tileX * TILE, snapped.tileY * TILE, TILE, TILE);
+    this.gridOverlay.strokeRect(
+      snapped.tileX * TILE,
+      snapped.tileY * TILE,
+      TILE,
+      TILE,
+    );
   }
 
   private hideGridOverlay() {
@@ -504,7 +587,8 @@ export class OfficeScene extends Phaser.Scene {
     }
 
     // ======= RUG — ornate center rug =======
-    const rugW = 8, rugH = 4;
+    const rugW = 8,
+      rugH = 4;
     const rugX = Math.floor((cols - rugW) / 2);
     const rugY = Math.floor((rows - rugH) / 2);
     g.fillStyle(0x000000, 0.12);
@@ -512,11 +596,26 @@ export class OfficeScene extends Phaser.Scene {
     g.fillStyle(P.rug, 1);
     g.fillRect(rugX * TILE, rugY * TILE, rugW * TILE, rugH * TILE);
     g.fillStyle(P.rugLight, 0.3);
-    g.fillRect(rugX * TILE + 8, rugY * TILE + 8, rugW * TILE - 16, rugH * TILE - 16);
+    g.fillRect(
+      rugX * TILE + 8,
+      rugY * TILE + 8,
+      rugW * TILE - 16,
+      rugH * TILE - 16,
+    );
     g.lineStyle(3, P.rugBorder, 1);
-    g.strokeRect(rugX * TILE + 4, rugY * TILE + 4, rugW * TILE - 8, rugH * TILE - 8);
+    g.strokeRect(
+      rugX * TILE + 4,
+      rugY * TILE + 4,
+      rugW * TILE - 8,
+      rugH * TILE - 8,
+    );
     g.lineStyle(1, P.rugBorder, 0.5);
-    g.strokeRect(rugX * TILE + 10, rugY * TILE + 10, rugW * TILE - 20, rugH * TILE - 20);
+    g.strokeRect(
+      rugX * TILE + 10,
+      rugY * TILE + 10,
+      rugW * TILE - 20,
+      rugH * TILE - 20,
+    );
     g.lineStyle(1, P.rugPattern, 0.3);
     const rcx = (rugX + rugW / 2) * TILE;
     const rcy = (rugY + rugH / 2) * TILE;
@@ -596,7 +695,13 @@ export class OfficeScene extends Phaser.Scene {
     this.bgObjects.push(lightG);
   }
 
-  private drawWindow(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
+  private drawWindow(
+    g: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ) {
     g.fillStyle(0x000000, 0.2);
     g.fillRect(x + 2, y + 2, w, h);
     g.fillStyle(P.windowFrame, 1);
@@ -626,11 +731,16 @@ export class OfficeScene extends Phaser.Scene {
     const deskStart = 2;
     const deskEnd = this.rows - 2;
     const deskRange = deskEnd - deskStart;
-    const deskRows: number[] = deskRange < 3
-      ? [deskStart]
-      : deskRange < 6
-        ? [deskStart, deskStart + Math.floor(deskRange / 2)]
-        : [deskStart, deskStart + Math.floor(deskRange / 3), deskStart + Math.floor(2 * deskRange / 3)];
+    const deskRows: number[] =
+      deskRange < 3
+        ? [deskStart]
+        : deskRange < 6
+          ? [deskStart, deskStart + Math.floor(deskRange / 2)]
+          : [
+              deskStart,
+              deskStart + Math.floor(deskRange / 3),
+              deskStart + Math.floor((2 * deskRange) / 3),
+            ];
 
     let fIdx = 0;
     const bottomRow = this.rows - 1;
@@ -638,106 +748,221 @@ export class OfficeScene extends Phaser.Scene {
 
     // Left wall desks
     for (const dr of deskRows) {
-      this.createFurnitureContainer(`desk-${fIdx++}`, 'desk', 1, dr);
+      this.createFurnitureContainer(`desk-${fIdx++}`, "desk", 1, dr);
       this.deskPositions.push({ x: 2, y: dr + 1 });
     }
 
     // Right wall desks
     for (const dr of deskRows) {
-      this.createFurnitureContainer(`desk-${fIdx++}`, 'desk', rightCol, dr);
+      this.createFurnitureContainer(`desk-${fIdx++}`, "desk", rightCol, dr);
       this.deskPositions.push({ x: rightCol + 1, y: dr + 1 });
     }
 
     // Center desks
     const cLeft = Math.floor(this.cols / 2) - 2;
     const cRight = Math.floor(this.cols / 2) + 1;
-    this.createFurnitureContainer(`desk-${fIdx++}`, 'desk', cLeft, 1);
+    this.createFurnitureContainer(`desk-${fIdx++}`, "desk", cLeft, 1);
     this.deskPositions.push({ x: cLeft + 1, y: 2 });
-    this.createFurnitureContainer(`desk-${fIdx++}`, 'desk', cRight, 1);
+    this.createFurnitureContainer(`desk-${fIdx++}`, "desk", cRight, 1);
     this.deskPositions.push({ x: cRight + 1, y: 2 });
 
     // Plants (corners)
-    this.createFurnitureContainer('plant-0', 'plant', 0, 1);
-    this.createFurnitureContainer('plant-1', 'plant', this.cols - 1, 1);
-    this.createFurnitureContainer('plant-2', 'plant', 0, bottomRow - 1);
-    this.createFurnitureContainer('plant-3', 'plant', this.cols - 1, bottomRow - 1);
+    this.createFurnitureContainer("plant-0", "plant", 0, 1);
+    this.createFurnitureContainer("plant-1", "plant", this.cols - 1, 1);
+    this.createFurnitureContainer("plant-2", "plant", 0, bottomRow - 1);
+    this.createFurnitureContainer(
+      "plant-3",
+      "plant",
+      this.cols - 1,
+      bottomRow - 1,
+    );
 
     // Whiteboard
-    this.createFurnitureContainer('whiteboard-0', 'whiteboard', Math.floor((this.cols - 2) / 2), 0);
+    this.createFurnitureContainer(
+      "whiteboard-0",
+      "whiteboard",
+      Math.floor((this.cols - 2) / 2),
+      0,
+    );
 
     // Bookshelves
-    this.createFurnitureContainer('bookshelf-0', 'bookshelf', Math.floor(this.cols * 0.2), bottomRow);
-    this.createFurnitureContainer('bookshelf-1', 'bookshelf', Math.floor(this.cols * 0.6), bottomRow);
+    this.createFurnitureContainer(
+      "bookshelf-0",
+      "bookshelf",
+      Math.floor(this.cols * 0.2),
+      bottomRow,
+    );
+    this.createFurnitureContainer(
+      "bookshelf-1",
+      "bookshelf",
+      Math.floor(this.cols * 0.6),
+      bottomRow,
+    );
 
     // Coffee machine
-    this.createFurnitureContainer('coffee-0', 'coffee-machine', this.cols - 2, bottomRow);
+    this.createFurnitureContainer(
+      "coffee-0",
+      "coffee-machine",
+      this.cols - 2,
+      bottomRow,
+    );
 
     // Water cooler
-    this.createFurnitureContainer('water-0', 'water-cooler', Math.floor(this.cols * 0.4), bottomRow);
+    this.createFurnitureContainer(
+      "water-0",
+      "water-cooler",
+      Math.floor(this.cols * 0.4),
+      bottomRow,
+    );
 
     // ── New furniture ──
 
     // Printer
-    this.createFurnitureContainer('printer-0', 'printer', Math.floor(this.cols / 2), 3);
+    this.createFurnitureContainer(
+      "printer-0",
+      "printer",
+      Math.floor(this.cols / 2),
+      3,
+    );
 
     // Filing cabinets
-    this.createFurnitureContainer('filing-0', 'filing-cabinet', 3, deskRows[0]);
+    this.createFurnitureContainer("filing-0", "filing-cabinet", 3, deskRows[0]);
     if (deskRows.length > 1) {
-      this.createFurnitureContainer('filing-1', 'filing-cabinet', this.cols - 4, deskRows[deskRows.length - 1]);
+      this.createFurnitureContainer(
+        "filing-1",
+        "filing-cabinet",
+        this.cols - 4,
+        deskRows[deskRows.length - 1],
+      );
     }
 
     // Couch
     const couchX = Math.floor(this.cols / 2) - 1;
     const couchY = Math.floor(this.rows / 2) + 1;
-    this.createFurnitureContainer('couch-0', 'couch', couchX, couchY);
+    this.createFurnitureContainer("couch-0", "couch", couchX, couchY);
 
     // Standing lamps
-    this.createFurnitureContainer('lamp-0', 'standing-lamp', 0, bottomRow);
-    this.createFurnitureContainer('lamp-1', 'standing-lamp', this.cols - 1, bottomRow);
+    this.createFurnitureContainer("lamp-0", "standing-lamp", 0, bottomRow);
+    this.createFurnitureContainer(
+      "lamp-1",
+      "standing-lamp",
+      this.cols - 1,
+      bottomRow,
+    );
 
     // Wall clocks
-    this.createFurnitureContainer('clock-0', 'wall-clock', Math.floor(this.cols * 0.15), 0);
-    this.createFurnitureContainer('clock-1', 'wall-clock', Math.floor(this.cols * 0.85), 0);
+    this.createFurnitureContainer(
+      "clock-0",
+      "wall-clock",
+      Math.floor(this.cols * 0.15),
+      0,
+    );
+    this.createFurnitureContainer(
+      "clock-1",
+      "wall-clock",
+      Math.floor(this.cols * 0.85),
+      0,
+    );
 
     // Coat rack
-    this.createFurnitureContainer('coatrack-0', 'coat-rack', Math.floor(this.cols / 2) + 3, bottomRow);
+    this.createFurnitureContainer(
+      "coatrack-0",
+      "coat-rack",
+      Math.floor(this.cols / 2) + 3,
+      bottomRow,
+    );
 
     // Snack machine
-    this.createFurnitureContainer('snack-0', 'snack-machine', Math.floor(this.cols * 0.8), bottomRow);
+    this.createFurnitureContainer(
+      "snack-0",
+      "snack-machine",
+      Math.floor(this.cols * 0.8),
+      bottomRow,
+    );
 
     // Cactus
-    this.createFurnitureContainer('cactus-0', 'cactus', Math.floor(this.cols / 2) - 4, 1);
-    this.createFurnitureContainer('cactus-1', 'cactus', Math.floor(this.cols / 2) + 4, 1);
+    this.createFurnitureContainer(
+      "cactus-0",
+      "cactus",
+      Math.floor(this.cols / 2) - 4,
+      1,
+    );
+    this.createFurnitureContainer(
+      "cactus-1",
+      "cactus",
+      Math.floor(this.cols / 2) + 4,
+      1,
+    );
 
     // TV mounted on wall
-    this.createFurnitureContainer('tv-0', 'tv', Math.floor(this.cols * 0.35), 0);
+    this.createFurnitureContainer(
+      "tv-0",
+      "tv",
+      Math.floor(this.cols * 0.35),
+      0,
+    );
 
     // Ping pong table (center-ish area)
-    this.createFurnitureContainer('pingpong-0', 'ping-pong', Math.floor(this.cols / 2) - 1, Math.floor(this.rows / 2) - 1);
+    this.createFurnitureContainer(
+      "pingpong-0",
+      "ping-pong",
+      Math.floor(this.cols / 2) - 1,
+      Math.floor(this.rows / 2) - 1,
+    );
 
     // Trash cans near desks
-    this.createFurnitureContainer('trash-0', 'trash-can', 3, deskRows[deskRows.length - 1] + 1);
-    this.createFurnitureContainer('trash-1', 'trash-can', this.cols - 4, deskRows[0] + 1);
+    this.createFurnitureContainer(
+      "trash-0",
+      "trash-can",
+      3,
+      deskRows[deskRows.length - 1] + 1,
+    );
+    this.createFurnitureContainer(
+      "trash-1",
+      "trash-can",
+      this.cols - 4,
+      deskRows[0] + 1,
+    );
 
     // Server rack (back corner)
-    this.createFurnitureContainer('server-0', 'server-rack', this.cols - 2, 1);
+    this.createFurnitureContainer("server-0", "server-rack", this.cols - 2, 1);
 
     // Fire extinguisher (wall-mounted)
-    this.createFurnitureContainer('fire-0', 'fire-extinguisher', 0, Math.floor(this.rows / 2));
+    this.createFurnitureContainer(
+      "fire-0",
+      "fire-extinguisher",
+      0,
+      Math.floor(this.rows / 2),
+    );
 
     // Umbrella stand near entrance
-    this.createFurnitureContainer('umbrella-0', 'umbrella-stand', Math.floor(this.cols / 2) - 2, bottomRow);
+    this.createFurnitureContainer(
+      "umbrella-0",
+      "umbrella-stand",
+      Math.floor(this.cols / 2) - 2,
+      bottomRow,
+    );
 
     // Mini fridge
-    this.createFurnitureContainer('fridge-0', 'mini-fridge', Math.floor(this.cols * 0.45), bottomRow);
+    this.createFurnitureContainer(
+      "fridge-0",
+      "mini-fridge",
+      Math.floor(this.cols * 0.45),
+      bottomRow,
+    );
 
     // Desk fan
-    this.createFurnitureContainer('fan-0', 'fan', 4, deskRows[0]);
+    this.createFurnitureContainer("fan-0", "fan", 4, deskRows[0]);
   }
 
-  private createFurnitureContainer(id: string, type: FurnitureItem['type'], tileX: number, tileY: number) {
+  private createFurnitureContainer(
+    id: string,
+    type: FurnitureItem["type"],
+    tileX: number,
+    tileY: number,
+  ) {
     // Use saved position if available
-    const saved = this.savedLayout?.find(f => f.id === id);
+    const saved = this.savedLayout?.find((f) => f.id === id);
     if (saved) {
       tileX = saved.x;
       tileY = saved.y;
@@ -745,56 +970,125 @@ export class OfficeScene extends Phaser.Scene {
 
     const container = this.add.container(tileX * TILE, tileY * TILE);
     container.setDepth(5);
-    container.setData('furnitureId', id);
-    container.setData('furnitureType', type);
+    container.setData("furnitureId", id);
+    container.setData("furnitureType", type);
 
     const g = this.add.graphics();
 
     switch (type) {
-      case 'desk': this.drawDeskGraphics(g); break;
-      case 'plant': this.drawPlantGraphics(g); break;
-      case 'whiteboard': this.drawWhiteboardGraphics(g); break;
-      case 'bookshelf': this.drawBookshelfGraphics(g); break;
-      case 'coffee-machine': this.drawCoffeeMachineGraphics(g); break;
-      case 'water-cooler': this.drawWaterCoolerGraphics(g); break;
-      case 'printer': this.drawPrinterGraphics(g); break;
-      case 'filing-cabinet': this.drawFilingCabinetGraphics(g); break;
-      case 'couch': this.drawCouchGraphics(g); break;
-      case 'standing-lamp': this.drawStandingLampGraphics(g); break;
-      case 'wall-clock': this.drawWallClockGraphics(g); break;
-      case 'coat-rack': this.drawCoatRackGraphics(g); break;
-      case 'snack-machine': this.drawSnackMachineGraphics(g); break;
-      case 'cactus': this.drawCactusGraphics(g); break;
-      case 'tv': this.drawTvGraphics(g); break;
-      case 'ping-pong': this.drawPingPongGraphics(g); break;
-      case 'trash-can': this.drawTrashCanGraphics(g); break;
-      case 'server-rack': this.drawServerRackGraphics(g); break;
-      case 'fire-extinguisher': this.drawFireExtinguisherGraphics(g); break;
-      case 'umbrella-stand': this.drawUmbrellaStandGraphics(g); break;
-      case 'mini-fridge': this.drawMiniFridgeGraphics(g); break;
-      case 'fan': this.drawFanGraphics(g); break;
+      case "desk":
+        this.drawDeskGraphics(g);
+        break;
+      case "plant":
+        this.drawPlantGraphics(g);
+        break;
+      case "whiteboard":
+        this.drawWhiteboardGraphics(g);
+        break;
+      case "bookshelf":
+        this.drawBookshelfGraphics(g);
+        break;
+      case "coffee-machine":
+        this.drawCoffeeMachineGraphics(g);
+        break;
+      case "water-cooler":
+        this.drawWaterCoolerGraphics(g);
+        break;
+      case "printer":
+        this.drawPrinterGraphics(g);
+        break;
+      case "filing-cabinet":
+        this.drawFilingCabinetGraphics(g);
+        break;
+      case "couch":
+        this.drawCouchGraphics(g);
+        break;
+      case "standing-lamp":
+        this.drawStandingLampGraphics(g);
+        break;
+      case "wall-clock":
+        this.drawWallClockGraphics(g);
+        break;
+      case "coat-rack":
+        this.drawCoatRackGraphics(g);
+        break;
+      case "snack-machine":
+        this.drawSnackMachineGraphics(g);
+        break;
+      case "cactus":
+        this.drawCactusGraphics(g);
+        break;
+      case "tv":
+        this.drawTvGraphics(g);
+        break;
+      case "ping-pong":
+        this.drawPingPongGraphics(g);
+        break;
+      case "trash-can":
+        this.drawTrashCanGraphics(g);
+        break;
+      case "server-rack":
+        this.drawServerRackGraphics(g);
+        break;
+      case "fire-extinguisher":
+        this.drawFireExtinguisherGraphics(g);
+        break;
+      case "umbrella-stand":
+        this.drawUmbrellaStandGraphics(g);
+        break;
+      case "mini-fridge":
+        this.drawMiniFridgeGraphics(g);
+        break;
+      case "fan":
+        this.drawFanGraphics(g);
+        break;
     }
 
     container.add(g);
 
     // Make interactive and draggable
-    const wideTypes = new Set(['desk', 'bookshelf', 'whiteboard', 'couch', 'snack-machine', 'ping-pong', 'tv']);
-    const tallTypes = new Set(['desk', 'snack-machine', 'filing-cabinet', 'server-rack']);
+    const wideTypes = new Set([
+      "desk",
+      "bookshelf",
+      "whiteboard",
+      "couch",
+      "snack-machine",
+      "ping-pong",
+      "tv",
+    ]);
+    const tallTypes = new Set([
+      "desk",
+      "snack-machine",
+      "filing-cabinet",
+      "server-rack",
+    ]);
     const hitW = wideTypes.has(type) ? TILE * 2 : TILE;
     const hitH = tallTypes.has(type) ? TILE * 2 : TILE;
     container.setSize(hitW, hitH);
-    container.setInteractive({ cursor: 'grab', draggable: true });
+    container.setInteractive({ cursor: "grab", draggable: true });
     this.input.setDraggable(container);
 
     // Hover feedback
-    container.on('pointerover', () => {
+    container.on("pointerover", () => {
       if (!this.isDragging) {
-        this.tweens.add({ targets: container, scaleX: 1.04, scaleY: 1.04, duration: 120, ease: 'Quad.easeOut' });
+        this.tweens.add({
+          targets: container,
+          scaleX: 1.04,
+          scaleY: 1.04,
+          duration: 120,
+          ease: "Quad.easeOut",
+        });
       }
     });
-    container.on('pointerout', () => {
+    container.on("pointerout", () => {
       if (!this.isDragging || this.dragTarget !== container) {
-        this.tweens.add({ targets: container, scaleX: 1, scaleY: 1, duration: 120, ease: 'Quad.easeOut' });
+        this.tweens.add({
+          targets: container,
+          scaleX: 1,
+          scaleY: 1,
+          duration: 120,
+          ease: "Quad.easeOut",
+        });
       }
     });
 
@@ -805,7 +1099,7 @@ export class OfficeScene extends Phaser.Scene {
   private rebuildDeskPositions() {
     this.deskPositions = [];
     for (const item of this.furnitureItems) {
-      if (item.type === 'desk') {
+      if (item.type === "desk") {
         this.deskPositions.push({ x: item.x + 1, y: item.y + 1 });
       }
     }
@@ -865,7 +1159,7 @@ export class OfficeScene extends Phaser.Scene {
     // Coffee mug
     g.fillStyle(0xffffff, 0.9);
     g.fillRect(6, 1, 6, 5);
-    g.fillStyle(0x8B4513, 0.4);
+    g.fillStyle(0x8b4513, 0.4);
     g.fillRect(7, 2, 4, 2);
 
     // Chair
@@ -932,8 +1226,8 @@ export class OfficeScene extends Phaser.Scene {
       g.fillStyle(noteColors[i], 0.85);
       g.fillRect(nx, ny, 36, 10);
       g.fillStyle(0x333333, 0.4);
-      g.fillRect(nx + 3, ny + 3, 20 + (i * 3), 1.5);
-      g.fillRect(nx + 3, ny + 6, 12 + (i * 5), 1.5);
+      g.fillRect(nx + 3, ny + 3, 20 + i * 3, 1.5);
+      g.fillRect(nx + 3, ny + 6, 12 + i * 5, 1.5);
     }
     g.fillStyle(0x999999, 1);
     g.fillRect(20, bh - 2, bw - 40, 3);
@@ -979,7 +1273,8 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private drawCoffeeMachineGraphics(g: Phaser.GameObjects.Graphics) {
-    const x = 4, y = 4;
+    const x = 4,
+      y = 4;
     g.fillStyle(0x000000, 0.1);
     g.fillRect(x + 2, y + 2, 34, 38);
     g.fillStyle(P.coffee, 1);
@@ -1180,7 +1475,9 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private drawWallClockGraphics(g: Phaser.GameObjects.Graphics) {
-    const cx = 16, cy = 16, r = 14;
+    const cx = 16,
+      cy = 16,
+      r = 14;
     // Shadow
     g.fillStyle(0x000000, 0.12);
     g.fillCircle(cx + 1, cy + 1, r + 1);
@@ -1338,8 +1635,15 @@ export class OfficeScene extends Phaser.Scene {
     // Spines (tiny dots)
     g.fillStyle(0xc8e6c9, 0.5);
     const spinePositions = [
-      [14, 10], [18, 12], [14, 16], [18, 20], [14, 24],
-      [7, 12], [24, 16], [8, 16], [23, 20],
+      [14, 10],
+      [18, 12],
+      [14, 16],
+      [18, 20],
+      [14, 24],
+      [7, 12],
+      [24, 16],
+      [8, 16],
+      [23, 20],
     ];
     for (const [sx, sy] of spinePositions) {
       g.fillCircle(sx, sy, 0.6);
@@ -1673,13 +1977,14 @@ export class OfficeScene extends Phaser.Scene {
   private assignDesks() {
     const usedDesks = new Set<number>();
     for (const agent of this.agents) {
-      if (agent.status !== 'idle' && agent.status !== 'collaborating') {
+      if (agent.status !== "idle" && agent.status !== "collaborating") {
         let bestIdx = -1;
         let bestDist = Infinity;
         for (let i = 0; i < this.deskPositions.length; i++) {
           if (usedDesks.has(i)) continue;
           const d = this.deskPositions[i];
-          const dist = Math.abs(d.x - agent.position.x) + Math.abs(d.y - agent.position.y);
+          const dist =
+            Math.abs(d.x - agent.position.x) + Math.abs(d.y - agent.position.y);
           if (dist < bestDist) {
             bestDist = dist;
             bestIdx = i;
@@ -1719,12 +2024,18 @@ export class OfficeScene extends Phaser.Scene {
 
   private statusToAnim(status: string): AnimState {
     switch (status) {
-      case 'thinking': return 'think';
-      case 'working': return 'type';
-      case 'speaking': return 'type';
-      case 'collaborating': return 'walk';
-      case 'background': return 'type';
-      default: return 'idle';
+      case "thinking":
+        return "think";
+      case "working":
+        return "type";
+      case "speaking":
+        return "type";
+      case "collaborating":
+        return "walk";
+      case "background":
+        return "type";
+      default:
+        return "idle";
     }
   }
 
@@ -1734,18 +2045,18 @@ export class OfficeScene extends Phaser.Scene {
 
     const container = this.add.container(px, py);
     container.setDepth(10);
-    container.setData('agentId', agent.id);
+    container.setData("agentId", agent.id);
 
     // Drop shadow (visible always, subtle)
     const shadow = this.add.graphics();
-    shadow.setName('shadow');
+    shadow.setName("shadow");
     shadow.fillStyle(0x000000, 0.15);
     shadow.fillEllipse(0, 20, 28, 8);
     container.add(shadow);
 
     // Selection highlight — soft glow ring
     const highlight = this.add.graphics();
-    highlight.setName('highlight');
+    highlight.setName("highlight");
     highlight.fillStyle(0xffffff, 0.08);
     highlight.fillCircle(0, 0, 26);
     highlight.fillStyle(0xffffff, 0.12);
@@ -1754,7 +2065,7 @@ export class OfficeScene extends Phaser.Scene {
     container.add(highlight);
 
     // Generate sprite sheet from agent color
-    const shirtColor = parseInt(agent.color.replace('#', ''), 16);
+    const shirtColor = parseInt(agent.color.replace("#", ""), 16);
     const palette = buildPalette(shirtColor, this.agentIndex++);
     const animKeys = registerAgentTextures(this, agent.id, palette);
     this.agentAnimKeys.set(agent.id, animKeys);
@@ -1762,19 +2073,19 @@ export class OfficeScene extends Phaser.Scene {
     // Create animated sprite
     const animState = this.statusToAnim(agent.status);
     const sprite = this.add.sprite(0, -2, animKeys[animState]);
-    sprite.setName('sprite');
+    sprite.setName("sprite");
     sprite.play(animKeys[animState]);
     container.add(sprite);
 
     // Name tag
     const nameText = this.add.text(0, 24, agent.name, {
-      fontSize: '9px',
+      fontSize: "9px",
       fontFamily: '"SF Pro", "Segoe UI", system-ui, sans-serif',
-      color: '#ffffff',
-      stroke: '#000000',
+      color: "#ffffff",
+      stroke: "#000000",
       strokeThickness: 3,
-      align: 'center',
-      fontStyle: 'bold',
+      align: "center",
+      fontStyle: "bold",
       resolution: window.devicePixelRatio,
     });
     nameText.setOrigin(0.5, 0);
@@ -1782,21 +2093,36 @@ export class OfficeScene extends Phaser.Scene {
 
     // Role text
     const roleText = this.add.text(0, 35, agent.role.slice(0, 30), {
-      fontSize: '7px',
+      fontSize: "7px",
       fontFamily: '"SF Pro", "Segoe UI", system-ui, sans-serif',
-      color: '#ffffff',
-      stroke: '#000000',
+      color: "#ffffff",
+      stroke: "#000000",
       strokeThickness: 3,
-      align: 'center',
+      align: "center",
       resolution: window.devicePixelRatio,
     });
     roleText.setOrigin(0.5, 0);
     container.add(roleText);
 
     // Status indicator
-    const statusColor = agent.status === 'thinking' ? 0xf39c12 : agent.status === 'working' ? 0x2ecc71 : agent.status === 'speaking' ? 0x3498db : agent.status === 'collaborating' ? 0x9b59b6 : agent.status === 'waiting-approval' ? 0xeab308 : agent.status === 'waiting-input' ? 0xf97316 : agent.status === 'stuck' ? 0xef4444 : 0x7f8c8d;
+    const statusColor =
+      agent.status === "thinking"
+        ? 0xf39c12
+        : agent.status === "working"
+          ? 0x2ecc71
+          : agent.status === "speaking"
+            ? 0x3498db
+            : agent.status === "collaborating"
+              ? 0x9b59b6
+              : agent.status === "waiting-approval"
+                ? 0xeab308
+                : agent.status === "waiting-input"
+                  ? 0xf97316
+                  : agent.status === "stuck"
+                    ? 0xef4444
+                    : 0x7f8c8d;
     const statusGfx = this.add.graphics();
-    statusGfx.setName('statusDot');
+    statusGfx.setName("statusDot");
     statusGfx.fillStyle(0x000000, 0.3);
     statusGfx.fillCircle(16, -22, 6);
     statusGfx.fillStyle(statusColor, 1);
@@ -1805,7 +2131,7 @@ export class OfficeScene extends Phaser.Scene {
     statusGfx.fillCircle(15, -23, 2);
     container.add(statusGfx);
 
-    if (agent.status !== 'idle') {
+    if (agent.status !== "idle") {
       this.tweens.add({
         targets: statusGfx,
         scaleX: 1.3,
@@ -1813,45 +2139,45 @@ export class OfficeScene extends Phaser.Scene {
         duration: 600,
         yoyo: true,
         repeat: -1,
-        ease: 'Sine.easeInOut',
+        ease: "Sine.easeInOut",
       });
     }
 
     // Interaction — click + drag
     container.setSize(TILE, TILE);
-    container.setInteractive({ cursor: 'grab', draggable: true });
+    container.setInteractive({ cursor: "grab", draggable: true });
     this.input.setDraggable(container);
 
-    container.on('pointerdown', () => {
+    container.on("pointerdown", () => {
       if (this.onAgentClick) this.onAgentClick(agent);
     });
-    container.on('pointerover', () => {
+    container.on("pointerover", () => {
       if (!this.isDragging) {
         this.tweens.add({
           targets: container,
           scaleX: 1.08,
           scaleY: 1.08,
           duration: 150,
-          ease: 'Back.easeOut',
+          ease: "Back.easeOut",
         });
         if (agent.currentThought) this.showThoughtBubble(agent, container);
       }
     });
-    container.on('pointerout', () => {
+    container.on("pointerout", () => {
       if (!this.isDragging || this.dragTarget !== container) {
         this.tweens.add({
           targets: container,
           scaleX: 1,
           scaleY: 1,
           duration: 150,
-          ease: 'Quad.easeOut',
+          ease: "Quad.easeOut",
         });
         this.hideThoughtBubble(agent.id);
       }
     });
 
     // Idle bob animation
-    if (agent.status === 'idle') {
+    if (agent.status === "idle") {
       this.startIdleBob(container, py);
     }
 
@@ -1862,14 +2188,17 @@ export class OfficeScene extends Phaser.Scene {
       name: agent.name,
       role: agent.role,
       color: agent.color,
-      thought: agent.currentThought ?? '',
+      thought: agent.currentThought ?? "",
       collaboratingWith: agent.collaboratingWith,
     });
   }
 
   // ── Thought bubbles ──
 
-  private showThoughtBubble(agent: Agent, _container: Phaser.GameObjects.Container) {
+  private showThoughtBubble(
+    agent: Agent,
+    _container: Phaser.GameObjects.Container,
+  ) {
     this.hideThoughtBubble(agent.id);
     if (!agent.currentThought) return;
 
@@ -1881,11 +2210,11 @@ export class OfficeScene extends Phaser.Scene {
 
     const maxW = 180;
     const text = this.add.text(0, 0, agent.currentThought, {
-      fontSize: '9px',
+      fontSize: "9px",
       fontFamily: '"SF Pro", "Segoe UI", system-ui, sans-serif',
-      color: '#1a1a2e',
+      color: "#1a1a2e",
       wordWrap: { width: maxW - 20 },
-      align: 'center',
+      align: "center",
       lineSpacing: 2,
       resolution: window.devicePixelRatio,
     });
@@ -1915,7 +2244,7 @@ export class OfficeScene extends Phaser.Scene {
       alpha: 1,
       y: py - 48,
       duration: 200,
-      ease: 'Back.easeOut',
+      ease: "Back.easeOut",
     });
 
     this.thoughtBubbles.set(agent.id, bubble);
@@ -1945,20 +2274,39 @@ export class OfficeScene extends Phaser.Scene {
     }
 
     const animKeys = this.agentAnimKeys.get(agent.id);
-    const sprite = container.getByName('sprite') as Phaser.GameObjects.Sprite | null;
+    const sprite = container.getByName(
+      "sprite",
+    ) as Phaser.GameObjects.Sprite | null;
     if (sprite && animKeys) {
       const animState = this.statusToAnim(agent.status);
       sprite.play(animKeys[animState]);
     }
 
     // Update status dot
-    const oldStatusGfx = container.getByName('statusDot') as Phaser.GameObjects.Graphics | null;
+    const oldStatusGfx = container.getByName(
+      "statusDot",
+    ) as Phaser.GameObjects.Graphics | null;
     if (oldStatusGfx) {
       oldStatusGfx.destroy();
     }
-    const statusColor = agent.status === 'thinking' ? 0xf39c12 : agent.status === 'working' ? 0x2ecc71 : agent.status === 'speaking' ? 0x3498db : agent.status === 'collaborating' ? 0x9b59b6 : agent.status === 'waiting-approval' ? 0xeab308 : agent.status === 'waiting-input' ? 0xf97316 : agent.status === 'stuck' ? 0xef4444 : 0x7f8c8d;
+    const statusColor =
+      agent.status === "thinking"
+        ? 0xf39c12
+        : agent.status === "working"
+          ? 0x2ecc71
+          : agent.status === "speaking"
+            ? 0x3498db
+            : agent.status === "collaborating"
+              ? 0x9b59b6
+              : agent.status === "waiting-approval"
+                ? 0xeab308
+                : agent.status === "waiting-input"
+                  ? 0xf97316
+                  : agent.status === "stuck"
+                    ? 0xef4444
+                    : 0x7f8c8d;
     const statusGfx = this.add.graphics();
-    statusGfx.setName('statusDot');
+    statusGfx.setName("statusDot");
     statusGfx.fillStyle(0x000000, 0.3);
     statusGfx.fillCircle(16, -22, 6);
     statusGfx.fillStyle(statusColor, 1);
@@ -1967,7 +2315,7 @@ export class OfficeScene extends Phaser.Scene {
     statusGfx.fillCircle(15, -23, 2);
     container.add(statusGfx);
 
-    if (agent.status !== 'idle') {
+    if (agent.status !== "idle") {
       this.tweens.add({
         targets: statusGfx,
         scaleX: 1.3,
@@ -1975,7 +2323,7 @@ export class OfficeScene extends Phaser.Scene {
         duration: 600,
         yoyo: true,
         repeat: -1,
-        ease: 'Sine.easeInOut',
+        ease: "Sine.easeInOut",
       });
     }
 
@@ -1989,8 +2337,10 @@ export class OfficeScene extends Phaser.Scene {
     let targetX: number;
     let targetY: number;
 
-    if (agent.status === 'collaborating' && agent.collaboratingWith) {
-      const targetAgent = this.agents.find(a => a.id === agent.collaboratingWith);
+    if (agent.status === "collaborating" && agent.collaboratingWith) {
+      const targetAgent = this.agents.find(
+        (a) => a.id === agent.collaboratingWith,
+      );
       if (targetAgent) {
         targetX = targetAgent.position.x * TILE + TILE / 2 + TILE * 0.6;
         targetY = targetAgent.position.y * TILE + TILE / 2;
@@ -2017,17 +2367,17 @@ export class OfficeScene extends Phaser.Scene {
       x: targetX,
       y: targetY,
       duration: moveDuration,
-      ease: 'Sine.easeInOut',
+      ease: "Sine.easeInOut",
       onComplete: () => {
         if (sprite && animKeys) {
           const animState = this.statusToAnim(agent.status);
           sprite.play(animKeys[animState]);
         }
-        if (agent.status === 'idle') {
+        if (agent.status === "idle") {
           this.startIdleBob(container, targetY);
           this.scheduleWalk(agent.id);
         }
-        if (agent.status === 'collaborating' && agent.collaboratingWith) {
+        if (agent.status === "collaborating" && agent.collaboratingWith) {
           this.drawCollaborationLine(agent.id, agent.collaboratingWith);
         }
       },
@@ -2038,7 +2388,7 @@ export class OfficeScene extends Phaser.Scene {
       name: agent.name,
       role: agent.role,
       color: agent.color,
-      thought: agent.currentThought ?? '',
+      thought: agent.currentThought ?? "",
       collaboratingWith: agent.collaboratingWith,
     });
   }
@@ -2081,7 +2431,7 @@ export class OfficeScene extends Phaser.Scene {
       duration: 800,
       yoyo: true,
       repeat: -1,
-      ease: 'Sine.easeInOut',
+      ease: "Sine.easeInOut",
     });
 
     this.collaborationLines.set(fromId, gfx);
@@ -2096,7 +2446,7 @@ export class OfficeScene extends Phaser.Scene {
       duration: 1200 + Math.random() * 600,
       yoyo: true,
       repeat: -1,
-      ease: 'Sine.easeInOut',
+      ease: "Sine.easeInOut",
       delay: Math.random() * 500,
     });
   }
@@ -2111,7 +2461,7 @@ export class OfficeScene extends Phaser.Scene {
     const delay = 5000 + Math.random() * 10000;
     const timer = this.time.delayedCall(delay, () => {
       const agent = this.agents.find((a) => a.id === agentId);
-      if (!agent || agent.status !== 'idle') {
+      if (!agent || agent.status !== "idle") {
         this.scheduleWalk(agentId);
         return;
       }
@@ -2130,7 +2480,9 @@ export class OfficeScene extends Phaser.Scene {
         this.tweens.killTweensOf(container);
 
         const animKeys = this.agentAnimKeys.get(agentId);
-        const sprite = container.getByName('sprite') as Phaser.GameObjects.Sprite | null;
+        const sprite = container.getByName(
+          "sprite",
+        ) as Phaser.GameObjects.Sprite | null;
         if (sprite && animKeys) {
           sprite.play(animKeys.walk);
         }
@@ -2143,7 +2495,7 @@ export class OfficeScene extends Phaser.Scene {
           x: targetX,
           y: targetY,
           duration: 1000 + Math.random() * 500,
-          ease: 'Sine.easeInOut',
+          ease: "Sine.easeInOut",
           onComplete: () => {
             if (sprite && animKeys) {
               sprite.play(animKeys.idle);
@@ -2221,9 +2573,18 @@ export class OfficeScene extends Phaser.Scene {
       this.dustGraphics.fillStyle(0xfff8e1, fadeAlpha);
       this.dustGraphics.fillCircle(mote.x, mote.y, mote.size);
 
-      if (mote.life >= mote.maxLife || mote.y < TILE || mote.y > H || mote.x < 0 || mote.x > W) {
+      if (
+        mote.life >= mote.maxLife ||
+        mote.y < TILE ||
+        mote.y > H ||
+        mote.x < 0 ||
+        mote.x > W
+      ) {
         if (this.windowBeamZones.length > 0 && Math.random() < 0.7) {
-          const zone = this.windowBeamZones[Math.floor(Math.random() * this.windowBeamZones.length)];
+          const zone =
+            this.windowBeamZones[
+              Math.floor(Math.random() * this.windowBeamZones.length)
+            ];
           mote.x = zone.x + (Math.random() - 0.5) * zone.w;
           mote.y = zone.y1 + Math.random() * (H - zone.y1);
         } else {

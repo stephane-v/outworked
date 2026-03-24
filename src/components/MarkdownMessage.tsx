@@ -1,28 +1,29 @@
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { useState } from 'react';
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { useState } from "react";
 
 interface MarkdownMessageProps {
   content: string;
   className?: string;
 }
 
-export default function MarkdownMessage({ content, className = '' }: MarkdownMessageProps) {
+export default function MarkdownMessage({
+  content,
+  className = "",
+}: MarkdownMessageProps) {
   return (
     <div className={`markdown-message ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           code({ className: codeClassName, children, ...props }) {
-            const match = /language-(\w+)/.exec(codeClassName || '');
-            const codeString = String(children).replace(/\n$/, '');
+            const match = /language-(\w+)/.exec(codeClassName || "");
+            const codeString = String(children).replace(/\n$/, "");
 
             if (match) {
-              return (
-                <CodeBlock language={match[1]} code={codeString} />
-              );
+              return <CodeBlock language={match[1]} code={codeString} />;
             }
 
             // Inline code
@@ -37,24 +38,46 @@ export default function MarkdownMessage({ content, className = '' }: MarkdownMes
           },
           // Paragraphs
           p({ children }) {
-            return <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>;
+            return (
+              <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>
+            );
           },
           // Headers
           h1({ children }) {
-            return <h1 className="text-sm font-bold text-white mb-1.5 mt-2 first:mt-0">{children}</h1>;
+            return (
+              <h1 className="text-sm font-bold text-white mb-1.5 mt-2 first:mt-0">
+                {children}
+              </h1>
+            );
           },
           h2({ children }) {
-            return <h2 className="text-[13px] font-bold text-white mb-1 mt-2 first:mt-0">{children}</h2>;
+            return (
+              <h2 className="text-[13px] font-bold text-white mb-1 mt-2 first:mt-0">
+                {children}
+              </h2>
+            );
           },
           h3({ children }) {
-            return <h3 className="text-xs font-bold text-white mb-1 mt-1.5 first:mt-0">{children}</h3>;
+            return (
+              <h3 className="text-xs font-bold text-white mb-1 mt-1.5 first:mt-0">
+                {children}
+              </h3>
+            );
           },
           // Lists
           ul({ children }) {
-            return <ul className="list-disc list-inside mb-1.5 space-y-0.5">{children}</ul>;
+            return (
+              <ul className="list-disc list-inside mb-1.5 space-y-0.5">
+                {children}
+              </ul>
+            );
           },
           ol({ children }) {
-            return <ol className="list-decimal list-inside mb-1.5 space-y-0.5">{children}</ol>;
+            return (
+              <ol className="list-decimal list-inside mb-1.5 space-y-0.5">
+                {children}
+              </ol>
+            );
           },
           li({ children }) {
             return <li className="leading-relaxed">{children}</li>;
@@ -84,7 +107,9 @@ export default function MarkdownMessage({ content, className = '' }: MarkdownMes
           table({ children }) {
             return (
               <div className="overflow-x-auto my-1.5">
-                <table className="text-[11px] border-collapse w-full">{children}</table>
+                <table className="text-[11px] border-collapse w-full">
+                  {children}
+                </table>
               </div>
             );
           },
@@ -92,10 +117,18 @@ export default function MarkdownMessage({ content, className = '' }: MarkdownMes
             return <thead className="bg-slate-700/50">{children}</thead>;
           },
           th({ children }) {
-            return <th className="border border-slate-600 px-2 py-1 text-left text-slate-300 font-bold">{children}</th>;
+            return (
+              <th className="border border-slate-600 px-2 py-1 text-left text-slate-300 font-bold">
+                {children}
+              </th>
+            );
           },
           td({ children }) {
-            return <td className="border border-slate-700 px-2 py-1 text-slate-300">{children}</td>;
+            return (
+              <td className="border border-slate-700 px-2 py-1 text-slate-300">
+                {children}
+              </td>
+            );
           },
           // Horizontal rule
           hr() {
@@ -137,7 +170,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
           onClick={handleCopy}
           className="text-[9px] text-slate-500 hover:text-slate-300 transition-colors opacity-0 group-hover:opacity-100"
         >
-          {copied ? 'copied!' : 'copy'}
+          {copied ? "copied!" : "copy"}
         </button>
       </div>
       <SyntaxHighlighter
@@ -145,10 +178,10 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
         language={language}
         customStyle={{
           margin: 0,
-          padding: '8px',
-          fontSize: '11px',
-          lineHeight: '1.4',
-          background: 'rgba(15, 23, 42, 0.8)',
+          padding: "8px",
+          fontSize: "11px",
+          lineHeight: "1.4",
+          background: "rgba(15, 23, 42, 0.8)",
         }}
       >
         {code}

@@ -1,8 +1,13 @@
-import { getDesktopNotificationsEnabled } from './sounds';
+import { getDesktopNotificationsEnabled } from "./sounds";
 
 export interface AppNotification {
   id: string;
-  type: 'approval' | 'task-complete' | 'agent-stuck' | 'orchestration-done' | 'info';
+  type:
+    | "approval"
+    | "task-complete"
+    | "agent-stuck"
+    | "orchestration-done"
+    | "info";
   title: string;
   body: string;
   agentName?: string;
@@ -18,7 +23,17 @@ export interface AppNotification {
 /** Send a desktop notification via Electron */
 export async function showDesktopNotification(title: string, body: string) {
   if (!getDesktopNotificationsEnabled()) return;
-  const w = window as unknown as { electronAPI?: { notifications?: { show: (t: string, b: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }> } } };
+  const w = window as unknown as {
+    electronAPI?: {
+      notifications?: {
+        show: (
+          t: string,
+          b: string,
+          o?: Record<string, unknown>,
+        ) => Promise<{ ok: boolean }>;
+      };
+    };
+  };
   if (w.electronAPI?.notifications) {
     await w.electronAPI.notifications.show(title, body);
   }

@@ -155,7 +155,9 @@ export default function App() {
     () => !localStorage.getItem("outworked_onboarding_done"),
   );
   const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTask[]>([]);
-  const [furnitureLayout] = useState<import("./phaser/OfficeScene").FurnitureItem[] | null>(() => {
+  const [furnitureLayout] = useState<
+    import("./phaser/OfficeScene").FurnitureItem[] | null
+  >(() => {
     try {
       const raw = localStorage.getItem("outworked_furniture_layout");
       return raw ? JSON.parse(raw) : null;
@@ -381,19 +383,28 @@ export default function App() {
     setRightPanel("chat");
   }, []);
 
-  const handleAgentMove = useCallback((agentId: string, x: number, y: number) => {
-    setAgents((prev) =>
-      prev.map((a) =>
-        a.id === agentId ? { ...a, position: { x, y } } : a,
-      ),
-    );
-  }, []);
+  const handleAgentMove = useCallback(
+    (agentId: string, x: number, y: number) => {
+      setAgents((prev) =>
+        prev.map((a) => (a.id === agentId ? { ...a, position: { x, y } } : a)),
+      );
+    },
+    [],
+  );
 
-  const handleFurnitureMove = useCallback((items: import("./phaser/OfficeScene").FurnitureItem[]) => {
-    try {
-      localStorage.setItem("outworked_furniture_layout", JSON.stringify(items));
-    } catch { /* ignore quota errors */ }
-  }, []);
+  const handleFurnitureMove = useCallback(
+    (items: import("./phaser/OfficeScene").FurnitureItem[]) => {
+      try {
+        localStorage.setItem(
+          "outworked_furniture_layout",
+          JSON.stringify(items),
+        );
+      } catch {
+        /* ignore quota errors */
+      }
+    },
+    [],
+  );
 
   function handleAddAgent() {
     if (claudeReady) {

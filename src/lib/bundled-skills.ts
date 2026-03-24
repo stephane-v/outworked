@@ -1,9 +1,9 @@
 // Bundled skills — imported as raw strings via Vite's ?raw suffix
-import githubRaw from '../basic-skills/github/SKILL.md?raw';
-import mcporterRaw from '../basic-skills/mcporter/SKILL.md?raw';
+import githubRaw from "../basic-skills/github/SKILL.md?raw";
+import mcporterRaw from "../basic-skills/mcporter/SKILL.md?raw";
 
-import { AgentSkill } from './types';
-import { parseSkill } from './skill-parser';
+import { AgentSkill } from "./types";
+import { parseSkill } from "./skill-parser";
 
 const BUNDLED_RAW: Record<string, string> = {
   github: githubRaw,
