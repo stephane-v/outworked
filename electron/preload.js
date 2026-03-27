@@ -55,6 +55,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Set GitHub token so git/gh commands have GH_TOKEN in their environment
   setGithubToken: (token) => ipcRenderer.invoke("shell:setGithubToken", token),
 
+  // Preview window
+  preview: {
+    open: (url) => ipcRenderer.invoke("preview:open", url),
+    close: () => ipcRenderer.invoke("preview:close"),
+    onOpened: (listener) => {
+      ipcRenderer.on("preview:opened", listener);
+      return () => ipcRenderer.removeListener("preview:opened", listener);
+    },
+  },
+
   // Claude Code integration (streaming)
   claudeCode: {
     start: (prompt, systemPrompt, cwd, timeoutMs) =>
@@ -121,6 +131,151 @@ contextBridge.exposeInMainWorld("electronAPI", {
     },
     watchProjectAgents: (projectDir) =>
       ipcRenderer.send("claude-code:watchProjectAgents", projectDir),
+  },
+
+  // Database / persistence
+  db: {
+    // App settings
+    settingGet: (key) => ipcRenderer.invoke("db:setting:get", key),
+    settingSet: (key, value) =>
+      ipcRenderer.invoke("db:setting:set", key, value),
+    settingDelete: (key) => ipcRenderer.invoke("db:setting:delete", key),
+    settingList: () => ipcRenderer.invoke("db:setting:list"),
+
+    // Memory
+    memorySet: (scope, key, value) =>
+      ipcRenderer.invoke("db:memory:set", scope, key, value),
+    memoryGet: (scope, key) => ipcRenderer.invoke("db:memory:get", scope, key),
+    memorySearch: (scope, query) =>
+      ipcRenderer.invoke("db:memory:search", scope, query),
+    memoryList: (scope) => ipcRenderer.invoke("db:memory:list", scope),
+    memoryDelete: (scope, key) =>
+      ipcRenderer.invoke("db:memory:delete", scope, key),
+
+    // Cost records
+    costAddRecord: (record) => ipcRenderer.invoke("db:cost:addRecord", record),
+    costGetAll: () => ipcRenderer.invoke("db:cost:getAll"),
+    costGetByAgent: (agentId) =>
+      ipcRenderer.invoke("db:cost:getByAgent", agentId),
+    costGetSince: (sinceMs) => ipcRenderer.invoke("db:cost:getSince", sinceMs),
+    costClear: () => ipcRenderer.invoke("db:cost:clear"),
+    costGetCumulative: (sessionKey) =>
+      ipcRenderer.invoke("db:cost:getCumulative", sessionKey),
+    costSetCumulative: (sessionKey, cost, inputTokens, outputTokens) =>
+      ipcRenderer.invoke(
+        "db:cost:setCumulative",
+        sessionKey,
+        cost,
+        inputTokens,
+        outputTokens,
+      ),
+    costDeleteCumulative: (sessionKey) =>
+      ipcRenderer.invoke("db:cost:deleteCumulative", sessionKey),
+    costGetBudgets: () => ipcRenderer.invoke("db:cost:getBudgets"),
+    costSetBudget: (agentId, dailyLimitUsd, totalLimitUsd) =>
+      ipcRenderer.invoke(
+        "db:cost:setBudget",
+        agentId,
+        dailyLimitUsd,
+        totalLimitUsd,
+      ),
+    costRecordDelta: (
+      sessionKey,
+      record,
+      cumulativeCost,
+      cumulativeInputTokens,
+      cumulativeOutputTokens,
+    ) =>
+      ipcRenderer.invoke(
+        "db:cost:recordDelta",
+        sessionKey,
+        record,
+        cumulativeCost,
+        cumulativeInputTokens,
+        cumulativeOutputTokens,
+      ),
+
+    // Triggers
+    triggerCreate: (trigger) =>
+      ipcRenderer.invoke("db:trigger:create", trigger),
+    triggerList: () => ipcRenderer.invoke("db:trigger:list"),
+    triggerUpdate: (id, updates) =>
+      ipcRenderer.invoke("db:trigger:update", id, updates),
+    triggerDelete: (id) => ipcRenderer.invoke("db:trigger:delete", id),
+
+    // Channel configs
+    channelConfigSave: (config) =>
+      ipcRenderer.invoke("db:channel:configSave", config),
+    channelConfigList: () => ipcRenderer.invoke("db:channel:configList"),
+    channelConfigDelete: (id) =>
+      ipcRenderer.invoke("db:channel:configDelete", id),
+
+    // Channel messages
+    channelMessageSave: (msg) =>
+      ipcRenderer.invoke("db:channel:messageSave", msg),
+    channelMessageList: (channelId, limit) =>
+      ipcRenderer.invoke("db:channel:messageList", channelId, limit),
+
+    // Skill auth (DB layer)
+    skillAuthGet: (runtime) => ipcRenderer.invoke("db:skill:authGet", runtime),
+    skillAuthSave: (runtime, credentials, config, status) =>
+      ipcRenderer.invoke(
+        "db:skill:authSave",
+        runtime,
+        credentials,
+        config,
+        status,
+      ),
+    skillAuthDelete: (runtime) =>
+      ipcRenderer.invoke("db:skill:authDelete", runtime),
+
+    // Custom skills
+    customSkillCreate: (skill) =>
+      ipcRenderer.invoke("db:customSkill:create", skill),
+    customSkillList: () => ipcRenderer.invoke("db:customSkill:list"),
+    customSkillGet: (id) => ipcRenderer.invoke("db:customSkill:get", id),
+    customSkillUpdate: (id, updates) =>
+      ipcRenderer.invoke("db:customSkill:update", id, updates),
+    customSkillDelete: (id) => ipcRenderer.invoke("db:customSkill:delete", id),
+
+    // Skill runtime auth (triggers OAuth flow in main process)
+    skillRuntimeAuth: (runtime) =>
+      ipcRenderer.invoke("skill-runtime:authenticate", runtime),
+    skillRuntimeDisconnect: (runtime) =>
+      ipcRenderer.invoke("skill-runtime:disconnect", runtime),
+    skillRuntimeStatus: (runtime) =>
+      ipcRenderer.invoke("skill-runtime:status", runtime),
+    skillRuntimeGetDocs: (opts) =>
+      ipcRenderer.invoke("skill-runtime:getSkillDocs", opts),
+
+    // Channel manager (lifecycle + messaging)
+    channelTypes: () => ipcRenderer.invoke("channel:types"),
+    channelRegister: (config) => ipcRenderer.invoke("channel:register", config),
+    channelRemove: (id) => ipcRenderer.invoke("channel:remove", id),
+    channelUpdate: (data) => ipcRenderer.invoke("channel:update", data),
+    channelConnect: (id) => ipcRenderer.invoke("channel:connect", id),
+    channelDisconnect: (id) => ipcRenderer.invoke("channel:disconnect", id),
+    channelSend: (channelId, conversationId, content) =>
+      ipcRenderer.invoke("channel:send", channelId, conversationId, content),
+    channelListLive: () => ipcRenderer.invoke("channel:list"),
+    channelLoadAll: () => ipcRenderer.invoke("channel:loadAll"),
+
+    // Channel events
+    onChannelInbound: (cb) => {
+      const listener = (_event, msg) => cb(msg);
+      ipcRenderer.on("channel:inbound", listener);
+      return () => ipcRenderer.removeListener("channel:inbound", listener);
+    },
+
+    // Trigger events
+    onTriggerFire: (cb) => {
+      const listener = (_event, data) => cb(data);
+      ipcRenderer.on("trigger:fire", listener);
+      return () => ipcRenderer.removeListener("trigger:fire", listener);
+    },
+
+    // Trigger test
+    triggerTest: (triggerId) => ipcRenderer.invoke("trigger:test", triggerId),
   },
 
   // Session persistence

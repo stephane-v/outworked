@@ -11,11 +11,33 @@ import {
   writeClaudeAgentFile,
   getHomedir,
   AgentFileInfo,
-  runClaudeCodeAdvanced,
+  runClaudeCode,
 } from "./terminal";
 import { v4 as uuidv4 } from "uuid";
+import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "./settings";
 
 const SKILLS_KEY = "outworked_skills";
+const GLOBAL_SKILLS_KEY = "outworked_global_skills";
+
+/** Parse outworked-skills JSON from frontmatter back into AgentSkill[] */
+function parseOutworkedSkills(raw: unknown): AgentSkill[] {
+  if (!raw) return [];
+  try {
+    const str = typeof raw === "string" ? raw : JSON.stringify(raw);
+    const arr = JSON.parse(str);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((s: any) => s && s.id && s.name)
+      .map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        content: s.content || "",
+        description: s.description || "",
+      }));
+  } catch {
+    return [];
+  }
+}
 
 export function createAgent(
   partial: Partial<Agent>,
@@ -27,8 +49,8 @@ export function createAgent(
     name: makeAgentName(),
     role: "Assistant",
     personality: "You are a helpful AI assistant working in the office.",
-    model: claudeCodeDefault ? "claude-code" : "gpt-5.4",
-    provider: claudeCodeDefault ? "claude-code" : "openai",
+    model: "claude-code" ,
+    provider: "claude-code",
     skills: [],
     position: { x: 3, y: 3 },
     status: "idle",
@@ -43,20 +65,26 @@ export function createAgent(
 
 // ─── App-level skills ──────────────────────────────────────────
 
-export function loadSkills(): AgentSkill[] {
+export async function loadSkills(): Promise<AgentSkill[]> {
   if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(SKILLS_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as AgentSkill[];
-  } catch {
-    return [];
-  }
+  return getSettingJSON<AgentSkill[]>(SKILLS_KEY, []);
 }
 
-export function saveSkills(skills: AgentSkill[]): void {
+export async function saveSkills(skills: AgentSkill[]): Promise<void> {
   if (typeof window === "undefined") return;
-  localStorage.setItem(SKILLS_KEY, JSON.stringify(skills));
+  await setSettingJSON(SKILLS_KEY, skills);
+}
+
+// ─── Global skills (available to all agents) ──────────────────
+
+export async function loadGlobalSkillIds(): Promise<string[]> {
+  if (typeof window === "undefined") return [];
+  return getSettingJSON<string[]>(GLOBAL_SKILLS_KEY, []);
+}
+
+export async function saveGlobalSkillIds(ids: string[]): Promise<void> {
+  if (typeof window === "undefined") return;
+  await setSettingJSON(GLOBAL_SKILLS_KEY, ids);
 }
 
 export function resetProject(agents: Agent[]): Agent[] {
@@ -69,8 +97,6 @@ export function resetProject(agents: Agent[]): Agent[] {
     currentSessionId: undefined,
     sessionId: undefined,
   }));
-  if (typeof window !== "undefined")
-    localStorage.removeItem("outworked_selected_agent");
   return cleared;
 }
 
@@ -97,6 +123,15 @@ export function buildSubagentMd(agent: Agent, slug: string): string {
   fm += `outworked-color: ${agent.color}\n`;
   if (agent.autoCreated) fm += `outworked-auto-created: true\n`;
   if (agent.isBoss) fm += `outworked-boss: true\n`;
+  if (agent.skills && agent.skills.length > 0) {
+    const skillRefs = agent.skills.map((s) => ({
+      id: s.id,
+      name: s.name,
+      description: s.description || "",
+      content: s.content,
+    }));
+    fm += `outworked-skills: ${JSON.stringify(skillRefs)}\n`;
+  }
 
   // Claude Code fields from subagentDef
   fm += `name: ${slug}\n`;
@@ -115,6 +150,12 @@ export function buildSubagentMd(agent: Agent, slug: string): string {
   if (def.isolation) fm += `isolation: ${def.isolation}\n`;
   if (def.background) fm += `background: true\n`;
   if (def.memory) fm += `memory: ${def.memory}\n`;
+  if (def.criticalSystemReminder)
+    fm += `criticalSystemReminder_EXPERIMENTAL: ${JSON.stringify(def.criticalSystemReminder)}\n`;
+  if (def.thinking && def.thinking !== "adaptive")
+    fm += `thinking: ${def.thinking}\n`;
+  if (def.thinkingBudget) fm += `thinkingBudget: ${def.thinkingBudget}\n`;
+  if (def.effort) fm += `effort: ${def.effort}\n`;
   if (def.skills && def.skills.length > 0) {
     fm += "skills:\n";
     for (const s of def.skills) fm += `  - ${s}\n`;
@@ -134,9 +175,25 @@ export function buildSubagentMd(agent: Agent, slug: string): string {
             for (const a of cfg.args) fm += `        - ${JSON.stringify(a)}\n`;
           }
           if (cfg.url) fm += `      url: ${cfg.url}\n`;
+          if (cfg.env && Object.keys(cfg.env).length > 0) {
+            fm += `      env:\n`;
+            for (const [k, v] of Object.entries(cfg.env)) {
+              fm += `        ${k}: ${JSON.stringify(v)}\n`;
+            }
+          }
+          if (cfg.headers && Object.keys(cfg.headers).length > 0) {
+            fm += `      headers:\n`;
+            for (const [k, v] of Object.entries(cfg.headers)) {
+              fm += `        ${k}: ${JSON.stringify(v)}\n`;
+            }
+          }
         }
       }
     }
+  }
+  if (def.excludeGlobalSkills && def.excludeGlobalSkills.length > 0) {
+    fm += "excludeGlobalSkills:\n";
+    for (const id of def.excludeGlobalSkills) fm += `  - ${JSON.stringify(id)}\n`;
   }
   if (def.hooks && Object.keys(def.hooks).length > 0) {
     fm += "hooks:\n";
@@ -236,12 +293,14 @@ Rules:
   try {
     // Use maxTurns: 1 to prevent Claude from using tools and force text-only output
     let fullText = "";
-    const result = await runClaudeCodeAdvanced(
+    const result = await runClaudeCode(
       {
         prompt,
         systemPrompt,
         cwd: opts.workspaceDir,
         maxTurns: 1,
+        effort: "low",
+        persistSession: false,
       },
       {
         onTextDelta: (text) => {
@@ -329,6 +388,7 @@ export function parseSubagentFrontmatter(content: string): {
     "outworked-color"?: string;
     "outworked-auto-created"?: boolean;
     "outworked-boss"?: boolean;
+    "outworked-skills"?: unknown;
   };
   body: string;
 } {
@@ -362,6 +422,12 @@ export function parseSubagentFrontmatter(content: string): {
               command: cfg.command as string | undefined,
               args: Array.isArray(cfg.args) ? cfg.args.map(String) : undefined,
               url: cfg.url as string | undefined,
+              env: typeof cfg.env === "object" && cfg.env !== null
+                ? cfg.env as Record<string, string>
+                : undefined,
+              headers: typeof cfg.headers === "object" && cfg.headers !== null
+                ? cfg.headers as Record<string, string>
+                : undefined,
             };
           }
         }
@@ -414,7 +480,14 @@ export function parseSubagentFrontmatter(content: string): {
       background: raw.background as boolean | undefined,
       isolation: raw.isolation as SubagentDef["isolation"] | undefined,
       mcpServers,
+      excludeGlobalSkills: Array.isArray(raw.excludeGlobalSkills)
+        ? raw.excludeGlobalSkills.map(String)
+        : undefined,
       hooks,
+      criticalSystemReminder: raw["criticalSystemReminder_EXPERIMENTAL"] as string | undefined,
+      thinking: raw.thinking as SubagentDef["thinking"] | undefined,
+      thinkingBudget: typeof raw.thinkingBudget === "number" ? raw.thinkingBudget : undefined,
+      effort: raw.effort as SubagentDef["effort"] | undefined,
       "outworked-id": raw["outworked-id"] as string | undefined,
       "outworked-name": raw["outworked-name"] as string | undefined,
       "outworked-role": raw["outworked-role"] as string | undefined,
@@ -430,6 +503,7 @@ export function parseSubagentFrontmatter(content: string): {
         raw["outworked-boss"] === true || raw["outworked-boss"] === "true"
           ? true
           : undefined,
+      "outworked-skills": raw["outworked-skills"],
     },
     body,
   };
@@ -690,6 +764,7 @@ export async function loadAgentsFromDisk(
       background: def.background,
       isolation: def.isolation,
       mcpServers: def.mcpServers,
+      excludeGlobalSkills: def.excludeGlobalSkills,
       hooks: def.hooks,
     };
 
@@ -700,7 +775,7 @@ export async function loadAgentsFromDisk(
       personality,
       model: "claude-code",
       provider: "claude-code",
-      skills: [],
+      skills: parseOutworkedSkills(def["outworked-skills"]),
       position,
       spriteKey,
       color,

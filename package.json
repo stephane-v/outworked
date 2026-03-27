@@ -1,6 +1,6 @@
 {
   "name": "outworked",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "AI agent orchestration tool",
   "author": "Outworked Team",
   "private": true,
@@ -10,25 +10,28 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint",
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
     "electron:dev": "vite build && VERBOSE_LOGGING=true electron .",
     "electron:build": "vite build && electron-builder --config electron-builder.yml",
     "electron:publish": "vite build && electron-builder --config electron-builder.yml --publish always",
     "version": "bash scripts/bump-version.sh"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.81",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.85",
+    "better-sqlite3": "^12.8.0",
     "electron-updater": "^6.8.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.2.2",
-    "@types/node": "^20",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.5.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-syntax-highlighter": "^15.5.13",
-    "@types/uuid": "^10.0.0",
+    "@types/uuid": "^11.0.0",
     "@vitejs/plugin-react": "^6.0.1",
-    "electron": "^41.0.3",
+    "electron": "^41.1.0",
     "electron-builder": "^26.8.1",
     "eslint": "^10.0.0",
     "globals": "^17.4.0",
@@ -40,9 +43,9 @@
     "react-syntax-highlighter": "^16.1.1",
     "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.2.2",
-    "typescript": "^5",
+    "typescript": "^6.0.2",
     "typescript-eslint": "^8.57.2",
     "uuid": "^13.0.0",
-    "vite": "^8.0.2"
+    "vite": "^8.0.3"
   }
 }

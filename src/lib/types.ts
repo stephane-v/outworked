@@ -15,10 +15,20 @@ export interface SkillMetadata {
     kind: string;
     formula?: string;
     package?: string;
+    module?: string;
     bins?: string[];
     label: string;
   }[];
   os?: string[];
+  // Active skill fields — skills with a runtime backend
+  runtime?: string; // backend module name (e.g. 'gmail', 'browser')
+  auth?: {
+    type: "oauth2" | "api-key" | "token";
+    provider?: string;
+    scopes?: string[];
+  };
+  tools?: string[]; // tool names this skill provides (e.g. ['gmail:send'])
+  triggers?: string[]; // event types this skill can emit
 }
 
 export interface AgentSkill {
@@ -26,7 +36,9 @@ export interface AgentSkill {
   name: string;
   content: string; // markdown content
   description?: string;
+  homepage?: string;
   metadata?: SkillMetadata;
+  authStatus?: "connected" | "disconnected" | "expired" | "error"; // for active skills
 }
 
 export interface Message {
@@ -74,7 +86,10 @@ export type AgentStatus =
   | "waiting-approval"
   | "slow"
   | "stuck"
-  | "background";
+  | "background"
+  | "channel-message"
+  | "browsing"
+  | "scheduled-task";
 
 export interface BackgroundTask {
   id: string;
@@ -104,6 +119,8 @@ export interface McpServerInline {
   command?: string;
   args?: string[];
   url?: string;
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
 }
 
 export interface HookCommand {
@@ -121,7 +138,7 @@ export interface SubagentDef {
   prompt?: string;
   tools?: string[];
   disallowedTools?: string[];
-  model?: string;
+  model?: "sonnet" | "opus" | "haiku" | "inherit" | string;
   permissionMode?: string;
   maxTurns?: number;
   skills?: string[];
@@ -129,7 +146,12 @@ export interface SubagentDef {
   background?: boolean;
   isolation?: "worktree";
   mcpServers?: (string | Record<string, McpServerInline>)[];
+  excludeGlobalSkills?: string[];
   hooks?: Record<string, HookMatcher[]>;
+  criticalSystemReminder?: string;
+  thinking?: "adaptive" | "enabled" | "disabled";
+  thinkingBudget?: number;
+  effort?: "low" | "medium" | "high" | "max";
 }
 
 export interface Agent {
@@ -160,6 +182,127 @@ export interface Agent {
   liveStreamText?: string; // partial response text being generated
   liveToolCalls?: { name: string; args: string; timestamp: number }[]; // tool calls in progress
   liveThinking?: string; // current thinking preview
+}
+
+// ─── Messaging Channels ─────────────────────────────────────────
+
+export interface ChannelMessage {
+  id?: number;
+  channelId: string;
+  direction: "inbound" | "outbound";
+  conversationId?: string;
+  sender?: string;
+  content: string;
+  metadata?: Record<string, unknown>;
+  timestamp: number;
+}
+
+export interface ChannelConfig {
+  id: string;
+  type: string; // 'imessage', 'slack'
+  name: string;
+  config: Record<string, unknown> & {
+    /** Phone numbers / emails / user IDs allowed to message this channel. Empty or ['*'] = allow all. */
+    allowedSenders?: string[];
+  };
+  status: "connected" | "disconnected" | "error";
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─── Scheduled Tasks ────────────────────────────────────────────
+
+export interface ScheduledTask {
+  id: string;
+  name: string;
+  type: "one-time" | "interval" | "cron";
+  schedule: string; // ISO timestamp, ms interval, or cron expression
+  agentId: string;
+  prompt: string;
+  enabled: boolean;
+  lastRunAt?: number;
+  nextRunAt: number;
+  runCount: number;
+  maxRuns?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TaskRunLog {
+  id: number;
+  taskId: string;
+  agentId: string;
+  startedAt: number;
+  completedAt?: number;
+  durationMs?: number;
+  status: "running" | "completed" | "error";
+  result?: string;
+  error?: string;
+}
+
+// ─── Triggers ───────────────────────────────────────────────────
+
+export interface Trigger {
+  id: string;
+  name: string;
+  enabled: boolean;
+  type: "message-pattern" | "skill-event" | "webhook" | "schedule";
+  pattern?: string;
+  channelId?: string;
+  senderAllowlist?: string[];
+  agentId: string;
+  prompt: string;
+  createdAt: number;
+  lastTriggeredAt?: number;
+  triggerCount: number;
+}
+
+// ─── Memory ─────────────────────────────────────────────────────
+
+export interface MemoryEntry {
+  id: string;
+  scope: string;
+  key: string;
+  value: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─── Skill Tools ────────────────────────────────────────────────
+
+export interface SkillTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  skillId: string;
+}
+
+// ─── Active Orchestrations ─────────────────────────────────────
+
+export interface OrchestrationAssignment {
+  agentId: string;
+  agentName: string;
+  task: string;
+  subtasks: string[];
+  group: number;
+  status: "pending" | "running" | "done" | "error";
+  result?: string;
+}
+
+export interface ActiveOrchestration {
+  id: string;
+  plan: string;
+  assignments: OrchestrationAssignment[];
+  startedAt: number;
+  /** If triggered by a channel message, store context for the reply */
+  channelContext?: {
+    channelId: string;
+    conversationId?: string;
+    sender?: string;
+    originalMessage: string;
+  };
+  /** Progress text shown during orchestration */
+  progressText: string;
 }
 
 export interface AgentMessage {

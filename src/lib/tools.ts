@@ -11,6 +11,29 @@ import {
 import { executeCode } from "./sandbox";
 import { execCommand } from "./terminal";
 
+// ─── Database IPC bridge ────────────────────────────────────────
+
+function getDbAPI(): {
+  memorySet: (scope: string, key: string, value: string) => Promise<unknown>;
+  memorySearch: (scope: string, query?: string) => Promise<unknown[]>;
+  memoryDelete: (scope: string, key: string) => Promise<boolean>;
+  channelListLive: () => Promise<
+    { id: string; type: string; name: string; status: string; errorMessage: string | null }[]
+  >;
+  channelSend: (
+    channelId: string,
+    conversationId: string,
+    content: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  channelMessageList: (
+    channelId: string,
+    limit: number,
+  ) => Promise<{ direction: string; sender?: string; content: string; timestamp: number }[]>;
+} | null {
+  const w = window as unknown as { electronAPI?: { db?: unknown } };
+  return (w.electronAPI?.db as ReturnType<typeof getDbAPI>) ?? null;
+}
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -219,6 +242,64 @@ export const AGENT_TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "remember",
+    description:
+      "Store a fact or note in persistent memory. Memories survive across sessions and can be recalled later. Use scopes: 'global' (shared across all agents), 'agent:<agentId>' (private to you), or 'project:<path>' (workspace-specific).",
+    parameters: {
+      type: "object",
+      properties: {
+        scope: {
+          type: "string",
+          description:
+            'Memory scope: "global", "agent:<yourAgentId>", or "project:<workspacePath>"',
+        },
+        key: {
+          type: "string",
+          description:
+            "Short key to identify this memory (e.g. 'user-preference', 'api-endpoint')",
+        },
+        value: {
+          type: "string",
+          description: "The information to remember",
+        },
+      },
+      required: ["scope", "key", "value"],
+    },
+  },
+  {
+    name: "recall",
+    description:
+      "Retrieve memories from persistent storage. Search by scope and optional query string.",
+    parameters: {
+      type: "object",
+      properties: {
+        scope: {
+          type: "string",
+          description:
+            'Memory scope to search: "global", "agent:<agentId>", or "project:<path>"',
+        },
+        query: {
+          type: "string",
+          description:
+            "Optional search query to filter memories by key or value",
+        },
+      },
+      required: ["scope"],
+    },
+  },
+  {
+    name: "forget",
+    description: "Delete a specific memory entry by scope and key.",
+    parameters: {
+      type: "object",
+      properties: {
+        scope: { type: "string", description: "Memory scope" },
+        key: { type: "string", description: "Memory key to delete" },
+      },
+      required: ["scope", "key"],
+    },
+  },
+  {
     name: "git_create_pr",
     description:
       "Create a GitHub pull request for the current branch using the gh CLI. Requires gh to be authenticated.",
@@ -233,6 +314,59 @@ export const AGENT_TOOLS: ToolDefinition[] = [
         },
       },
       required: ["title"],
+    },
+  },
+  {
+    name: "send_message",
+    description:
+      'Send a message through a connected messaging channel (iMessage, Slack, etc). Use list_channels first to see which channels are available and connected. For Slack threads, use "CHANNEL_ID:THREAD_TS" as the conversationId.',
+    parameters: {
+      type: "object",
+      properties: {
+        channelId: {
+          type: "string",
+          description:
+            "ID of the channel to send through (from list_channels)",
+        },
+        conversationId: {
+          type: "string",
+          description:
+            'Recipient identifier — phone number/email for iMessage, Slack channel ID, or "CHANNEL_ID:THREAD_TS" for threaded Slack replies',
+        },
+        content: {
+          type: "string",
+          description: "Message text to send",
+        },
+      },
+      required: ["channelId", "conversationId", "content"],
+    },
+  },
+  {
+    name: "list_channels",
+    description:
+      "List all configured messaging channels and their connection status. Use this to discover available channels before sending messages.",
+    parameters: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "read_channel_messages",
+    description:
+      "Read recent messages from a messaging channel. Useful for checking what messages have been received or sent.",
+    parameters: {
+      type: "object",
+      properties: {
+        channelId: {
+          type: "string",
+          description: "ID of the channel to read messages from",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of messages to return (default: 20)",
+        },
+      },
+      required: ["channelId"],
     },
   },
 ];
@@ -340,6 +474,72 @@ export async function executeTool(
       );
       if (!r.ok) return `Error creating PR: ${r.stderr || r.error}`;
       return r.stdout || "(PR created)";
+    }
+    case "remember": {
+      const db = getDbAPI();
+      if (!db) return "Error: database not available (not running in Electron)";
+      const result = await db.memorySet(args.scope, args.key, args.value);
+      return `Remembered: [${args.scope}] ${args.key} = ${args.value.slice(0, 100)}${args.value.length > 100 ? "…" : ""}`;
+    }
+    case "recall": {
+      const db = getDbAPI();
+      if (!db) return "Error: database not available (not running in Electron)";
+      const memories = await db.memorySearch(args.scope, args.query);
+      if (!memories || memories.length === 0)
+        return `No memories found in scope "${args.scope}"${args.query ? ` matching "${args.query}"` : ""}`;
+      return (memories as Record<string, unknown>[])
+        .map(
+          (m) =>
+            `[${m.key}] ${String(m.value).slice(0, 200)}`,
+        )
+        .join("\n");
+    }
+    case "forget": {
+      const db = getDbAPI();
+      if (!db) return "Error: database not available (not running in Electron)";
+      const deleted = await db.memoryDelete(args.scope, args.key);
+      return deleted
+        ? `Forgot: [${args.scope}] ${args.key}`
+        : `Memory not found: [${args.scope}] ${args.key}`;
+    }
+    case "send_message": {
+      const db = getDbAPI();
+      if (!db) return "Error: database not available (not running in Electron)";
+      const result = await db.channelSend(
+        args.channelId,
+        args.conversationId,
+        args.content,
+      );
+      if (!result.ok)
+        return `Error sending message: ${result.error || "unknown error"}`;
+      return `Message sent via channel ${args.channelId} to ${args.conversationId}`;
+    }
+    case "list_channels": {
+      const db = getDbAPI();
+      if (!db) return "Error: database not available (not running in Electron)";
+      const channels = await db.channelListLive();
+      if (!channels || channels.length === 0)
+        return "No messaging channels configured. Ask the user to set up a channel (iMessage or Slack) in the Channels panel.";
+      return channels
+        .map(
+          (ch) =>
+            `[${ch.id}] ${ch.name} (${ch.type}) — ${ch.status}${ch.errorMessage ? ` (${ch.errorMessage})` : ""}`,
+        )
+        .join("\n");
+    }
+    case "read_channel_messages": {
+      const db = getDbAPI();
+      if (!db) return "Error: database not available (not running in Electron)";
+      const limit = parseInt(args.limit, 10) || 20;
+      const msgs = await db.channelMessageList(args.channelId, limit);
+      if (!msgs || msgs.length === 0)
+        return `No messages found for channel ${args.channelId}`;
+      return msgs
+        .map(
+          (m) =>
+            `[${m.direction}] ${m.sender ? m.sender + ": " : ""}${m.content.slice(0, 300)}${m.content.length > 300 ? "…" : ""} (${new Date(m.timestamp).toLocaleString()})`,
+        )
+        .join("\n");
     }
     default:
       return `Unknown tool: ${name}`;

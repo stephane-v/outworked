@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
+  ActiveOrchestration,
   Agent,
   AgentSkill,
   AgentStatus,
@@ -7,10 +8,11 @@ import {
   BackgroundTask,
   Message,
   MODELS,
+  OrchestrationAssignment,
   SessionMeta,
   ToolCall,
 } from "../lib/types";
-import { sendMessage, sendMessageWithCost } from "../lib/ai";
+import { sendMessage } from "../lib/ai";
 import { addCumulativeCost } from "../lib/costs";
 import {
   executeTask,
@@ -29,7 +31,18 @@ import {
   searchSessions,
 } from "../lib/sessions";
 import { addExchange, clearExchanges, parseAskRequests } from "../lib/agentBus";
+import { getSetting } from "../lib/settings";
+import PermissionModal from "./PermissionModal";
 import MarkdownMessage from "./MarkdownMessage";
+
+/** Extract the last meaningful snippet from cumulative streaming text for thought bubbles. */
+function tailThought(text: string, maxLen = 70): string {
+  // Grab the last non-empty line (streaming text accumulates with newlines)
+  const lines = text.split("\n").filter((l) => l.trim());
+  const last = lines.length > 0 ? lines[lines.length - 1].trim() : text.trim();
+  if (last.length <= maxLen) return last;
+  return "..." + last.slice(last.length - maxLen + 3);
+}
 
 export interface OrchestrationDoneEvent {
   success: number;
@@ -56,6 +69,10 @@ interface ChatWindowProps {
     task: BackgroundTask,
     execute: () => Promise<{ reply: string; agent: Agent }>,
   ) => void;
+  autoApprovePermissions?: boolean;
+  /** Programmatically injected message (e.g. from a trigger). Consumed once. */
+  pendingMessage?: { text: string; nonce: string } | null;
+  onPendingMessageConsumed?: () => void;
 }
 
 const EMPTY_KEYS = { openai: "", anthropic: "", gemini: "", github: "" };
@@ -154,9 +171,12 @@ export default function ChatWindow({
   agentTeamsEnabled,
   onOrchestrationDone,
   onPermissionNotification,
+  autoApprovePermissions,
   debugMode,
   backgroundTasks,
   onStartBackgroundTask,
+  pendingMessage,
+  onPendingMessageConsumed,
 }: ChatWindowProps) {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -164,6 +184,9 @@ export default function ChatWindow({
   const [streamingText, setStreamingText] = useState("");
   const [pendingPermission, setPendingPermission] =
     useState<PermissionRequest | null>(null);
+  const [permissionLog, setPermissionLog] = useState<
+    { tool: string; description: string; agentName?: string; timestamp: number; autoApproved: boolean }[]
+  >([]);
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
   const [toolCalls, setToolCalls] = useState<
@@ -179,6 +202,43 @@ export default function ChatWindow({
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const debugBottomRef = useRef<HTMLDivElement>(null);
+  const pendingNonceRef = useRef<string | null>(null);
+  const activeOrchestrationRef = useRef<ActiveOrchestration | null>(null);
+  // Always-current agents ref for background closures that outlive the render
+  const agentsRef = useRef(agents);
+  agentsRef.current = agents;
+
+  // Auto-send programmatically injected messages (e.g. from triggers).
+  // Uses a ref to pass the text directly to handleSend instead of relying
+  // on DOM button clicks which can silently fail.
+  const pendingAutoSendRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (
+      pendingMessage &&
+      pendingMessage.nonce !== pendingNonceRef.current &&
+      agent &&
+      // Allow messages through when boss has an active orchestration (employees
+      // are working but the boss is free to respond to channel messages)
+      (!isStreaming || (agent.isBoss && activeOrchestrationRef.current))
+    ) {
+      pendingNonceRef.current = pendingMessage.nonce;
+      pendingAutoSendRef.current = pendingMessage.text;
+      setInput(pendingMessage.text);
+      onPendingMessageConsumed?.();
+      // Defer to next tick so input state is set before handleSend reads it
+      setTimeout(() => {
+        const sendBtn = document.getElementById("chat-send-btn");
+        if (sendBtn) {
+          sendBtn.click();
+        } else {
+          // Fallback: reset agent status if we can't send
+          console.warn("[ChatWindow] Could not find send button for auto-send");
+          pendingAutoSendRef.current = null;
+        }
+      }, 100);
+    }
+  }, [pendingMessage, agent, isStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function addDebug(line: string) {
     const ts = new Date().toISOString().slice(11, 23);
@@ -327,7 +387,10 @@ export default function ChatWindow({
   }
 
   async function handleSend() {
-    if (!input.trim() || isStreaming || !agent) return;
+    if (!input.trim() || !agent) return;
+    // Allow sending when boss has active orchestration (employees working, boss is free)
+    if (isStreaming && !(agent.isBoss && activeOrchestrationRef.current))
+      return;
     const userText = input.trim();
     setInput("");
     setWorkStartedAt(Date.now());
@@ -335,6 +398,7 @@ export default function ChatWindow({
     setStreamingAgentId(agent.id);
     setStreamingText("");
     setToolCalls([]);
+    setPermissionLog([]);
     setThinkingPreview("");
 
     const userMsg: Message = {
@@ -375,19 +439,70 @@ export default function ChatWindow({
     // Capture them here so the final agent update doesn't overwrite them
     // with the stale pre-orchestration updatedWithUser.
     let orchestrationTodos: AgentTodo[] | undefined;
+    // Similarly, capture the Claude Code sessionId so follow-up messages
+    // can resume the same session and retain full conversation context.
+    // Only set when the inner handler provides a new sessionId.
+    let bossSessionId: string | undefined;
 
     try {
       let reply: string;
 
-      if (isBoss && agentTeamsEnabled) {
+      // ── Boss with active orchestration: answer with context about in-flight work ──
+      if (isBoss && activeOrchestrationRef.current) {
+        const orch = activeOrchestrationRef.current;
+        const statusLines = orch.assignments
+          .map((a) => {
+            const emoji =
+              a.status === "done"
+                ? "✅"
+                : a.status === "running"
+                  ? "🔄"
+                  : a.status === "error"
+                    ? "❌"
+                    : "⏳";
+            return `${emoji} **${a.agentName}**: ${a.task} — *${a.status}*${a.result ? ` (done: ${a.result.slice(0, 100)}...)` : ""}`;
+          })
+          .join("\n");
+        const contextPrompt =
+          `You are the office manager. While your team is working, you received a new message.\n\n` +
+          `**Current orchestration in progress** (started ${Math.round((Date.now() - orch.startedAt) / 1000)}s ago):\n` +
+          `Plan: ${orch.plan}\n\n${statusLines}\n\n` +
+          `**New message:** ${userText}\n\n` +
+          `Respond naturally. If they're asking about what the office is working on, summarize the current tasks and progress. ` +
+          `If it's a separate question, answer it directly. Keep it concise.`;
+        reply = await handleRegularChat(updatedWithUser, contextPrompt);
+      } else if (isBoss && agentTeamsEnabled) {
         // Agent Teams mode: let Claude Code handle orchestration natively
         reply = await handleBossAgentTeams(updatedWithUser, userText);
       } else if (isBoss) {
-        // Custom orchestrator: plan tasks, then dispatch to employees
+        // Custom orchestrator: plan tasks, then dispatch to employees in background
         reply = await handleBossOrchestrate(updatedWithUser, userText);
       } else {
         // Regular agent: direct chat with tools
         reply = await handleRegularChat(updatedWithUser, userText);
+      }
+
+      // If this was a channel message and no active orchestration is running,
+      // give the boss a follow-up turn with tools to send the reply back via send_message.
+      // (When orchestration is active, the completion handler sends the reply instead.)
+      const wasChannelMessage = updatedWithUser.status === "channel-message";
+      if (wasChannelMessage && isBoss && !activeOrchestrationRef.current) {
+        onUpdateAgent({
+          ...updatedWithUser,
+          status: "working",
+          currentThought: "📤 Sending reply...",
+        });
+        const sendPrompt =
+          `Here is the result of the tasks you orchestrated:\n\n${reply}\n\n` +
+          `Now send a concise summary of these results back to the person who messaged you. ` +
+          `Use the send_message tool with the channelId and conversationId from the original message above. ` +
+          `Keep the reply short and helpful.`;
+        try {
+          await handleRegularChat(updatedWithUser, sendPrompt);
+        } catch {
+          // Best-effort — don't fail the whole orchestration if send fails
+          console.warn("[boss] Failed to send channel reply");
+        }
       }
 
       const assistantMsg: Message = {
@@ -395,13 +510,19 @@ export default function ChatWindow({
         content: reply,
         timestamp: Date.now(),
       };
+      // When the boss delegates in background mode, the orchestration has already
+      // set up todos on the boss. Use the current agent state (via agentsRef) to
+      // avoid overwriting those with the stale pre-orchestration updatedWithUser.
+      const currentState = agentsRef.current.find((a) => a.id === updatedWithUser.id) || updatedWithUser;
       const finalAgent: Agent = {
-        ...updatedWithUser,
+        ...currentState,
         // Preserve orchestration todos — updatedWithUser has stale pre-orchestration state
         ...(orchestrationTodos && { todos: orchestrationTodos }),
+        // Preserve Claude Code sessionId so follow-ups resume the same session
+        ...(bossSessionId && { sessionId: bossSessionId }),
         history: [...updatedWithUser.history, assistantMsg],
         status: "idle",
-        currentThought: reply.slice(0, 80) + (reply.length > 80 ? "..." : ""),
+        currentThought: tailThought(reply, 80),
       };
       onUpdateAgent(finalAgent);
       // Persist session to disk
@@ -514,7 +635,7 @@ export default function ChatWindow({
         });
 
         try {
-          const response = await sendMessage(
+          const { text: response } = await sendMessage(
             { ...target, history: [] },
             `[COLLEAGUE QUESTION from ${askingAgent.name}]: ${ask.question}\n\nPlease answer this question from your colleague concisely.`,
             EMPTY_KEYS,
@@ -522,11 +643,10 @@ export default function ChatWindow({
               onUpdateAgent({
                 ...target,
                 status: "working",
-                currentThought:
-                  partial.slice(0, 80) + (partial.length > 80 ? "..." : ""),
+                currentThought: tailThought(partial, 80),
               }),
             abortRef.current?.signal,
-            { useTools: false, skills },
+            { useTools: true, skills },
           );
 
           addExchange(
@@ -558,7 +678,8 @@ export default function ChatWindow({
 
     // ── Boss Agent Teams flow (native Claude Code orchestration) ──
     // Claude Code itself coordinates the teammates — we just wire up
-    // callbacks so the UI stays in sync.
+    // callbacks so the UI stays in sync. The boss returns immediately
+    // and stays responsive while employees work in the background.
     async function handleBossAgentTeams(
       bossAgent: Agent,
       userText: string,
@@ -570,10 +691,28 @@ export default function ChatWindow({
         status: "working",
         currentThought: "Delegating via Agent Teams...",
       });
-      setStreamingText("🤖 Running via Agent Teams...\n");
+      setStreamingText("Delegating via Agent Teams...\n");
       if (debugMode) addDebug(`[teams] Starting Agent Teams orchestration`);
 
-      const callbacks: AgentTeamCallbacks = {
+      // Track per-agent state for todos, collaboration, and completion
+      const agentTodos = new Map<string, AgentTodo>();
+      const bossTodos: AgentTodo[] = [];
+      const agentStatuses = new Map<string, "working" | "done" | "error">();
+      let lastCompletedAgent: { name: string; timestamp: number } | null = null;
+
+      // Create orchestration so the boss stays responsive during background work
+      const wasChannelMessage = bossAgent.status === "channel-message";
+      const orchestration: ActiveOrchestration = {
+        id: crypto.randomUUID(),
+        plan: "Agent Teams orchestration",
+        assignments: [],
+        startedAt: Date.now(),
+        channelContext: wasChannelMessage ? extractChannelContext(userText) : undefined,
+        progressText: "Delegating via Agent Teams...",
+      };
+      activeOrchestrationRef.current = orchestration;
+
+      const teamCallbacks: AgentTeamCallbacks = {
         onTeamEvent: (event) => {
           if (event.type === "text" && event.text) {
             setStreamingText((s) => s + event.text);
@@ -582,10 +721,92 @@ export default function ChatWindow({
             if (debugMode) addDebug(`[teams] ${event.text}`);
           }
         },
+        onAgentDelegation: (agentName, task) => {
+          // Create boss todo for this delegation
+          const bossTodo: AgentTodo = {
+            id: `teams-boss-${Date.now()}-${agentName}`,
+            text: `→ ${agentName}: ${task}`,
+            status: "in-progress",
+            timestamp: Date.now(),
+          };
+          bossTodos.push(bossTodo);
+          onUpdateAgent({
+            ...bossAgent,
+            todos: [...(bossAgent.todos || []), ...bossTodos],
+          });
+
+          // Create todo on the target employee
+          const emp = agents.find(
+            (a) => a.name.toLowerCase() === agentName.toLowerCase(),
+          );
+          if (emp) {
+            const empTodo: AgentTodo = {
+              id: `teams-emp-${Date.now()}-${agentName}`,
+              text: task,
+              status: "in-progress",
+              timestamp: Date.now(),
+            };
+            agentTodos.set(agentName.toLowerCase(), empTodo);
+            onUpdateAgent({
+              ...emp,
+              todos: [...(emp.todos ?? []), empTodo],
+            });
+          }
+
+          // Dynamically populate orchestration assignments for boss-busy guard
+          orchestration.assignments.push({
+            agentId: emp?.id ?? "",
+            agentName,
+            task,
+            subtasks: [],
+            group: 1,
+            status: "running",
+          });
+
+          // Collaboration visual: sequential handoff
+          if (lastCompletedAgent && Date.now() - lastCompletedAgent.timestamp < 5000) {
+            const fromEmp = agents.find(
+              (a) => a.name.toLowerCase() === lastCompletedAgent!.name.toLowerCase(),
+            );
+            if (fromEmp && emp && fromEmp.id !== emp.id) {
+              showCollaboration(emp, fromEmp, `Getting context from ${fromEmp.name}`, 2000);
+            }
+          }
+        },
         onAgentStatus: (agentName, status, thought) => {
           const emp = agents.find(
             (a) => a.name.toLowerCase() === agentName.toLowerCase(),
           );
+
+          if (status === "done") {
+            agentStatuses.set(agentName.toLowerCase(), "done");
+            lastCompletedAgent = { name: agentName, timestamp: Date.now() };
+
+            // Mark todos as done
+            const empTodo = agentTodos.get(agentName.toLowerCase());
+            if (empTodo && emp) {
+              empTodo.status = "done";
+              onUpdateAgent({
+                ...emp,
+                todos: (emp.todos ?? []).map((t) =>
+                  t.id === empTodo.id ? { ...t, status: "done" as const } : t,
+                ),
+              });
+            }
+            const bossTodo = bossTodos.find((t) =>
+              t.text.toLowerCase().startsWith(`→ ${agentName.toLowerCase()}`),
+            );
+            if (bossTodo) {
+              bossTodo.status = "done";
+            }
+
+            // Update orchestration assignment status
+            const assignment = orchestration.assignments.find(
+              (a) => a.agentName.toLowerCase() === agentName.toLowerCase(),
+            );
+            if (assignment) assignment.status = "done";
+          }
+
           if (emp) {
             onUpdateAgent({
               ...emp,
@@ -604,10 +825,40 @@ export default function ChatWindow({
                             ? "stuck"
                             : emp.status,
               currentThought: thought || "",
+              // Clear live streaming state when agent completes
+              ...(status === "done" ? { liveStreamText: "", liveToolCalls: [], liveThinking: "" } : {}),
             });
           }
           if (debugMode)
             addDebug(`[teams] ${agentName} → ${status}: ${thought || ""}`);
+        },
+        onAgentStreamDelta: (agentName, delta, fullText) => {
+          const emp = agents.find(
+            (a) => a.name.toLowerCase() === agentName.toLowerCase(),
+          );
+          if (emp) {
+            onUpdateAgent({
+              ...emp,
+              liveStreamText: fullText,
+              currentThought: tailThought(delta),
+            });
+          }
+        },
+        onAgentToolUse: (agentName, toolName, input) => {
+          const emp = agents.find(
+            (a) => a.name.toLowerCase() === agentName.toLowerCase(),
+          );
+          if (emp) {
+            const label = `${toolName}${(input as Record<string, unknown>).file_path ? ` ${(input as Record<string, unknown>).file_path}` : ""}`;
+            onUpdateAgent({
+              ...emp,
+              liveToolCalls: [
+                ...(emp.liveToolCalls ?? []),
+                { name: toolName, args: label, timestamp: Date.now() },
+              ],
+              currentThought: label,
+            });
+          }
         },
         onNewAgent: (agentName, description) => {
           if (debugMode)
@@ -634,30 +885,82 @@ export default function ChatWindow({
             onAddAgent(newAgent);
           }
         },
-        onPermissionRequest: (agentName, tool, description, reqId) => {
-          if (onPermissionNotification && agentName) {
-            onPermissionNotification(agentName, {
-              tool,
-              description,
-              reqId,
-            } as PermissionRequest);
-          }
+        onPermissionRequest: (agentName, tool, description, reqId, permId) => {
+          const request: PermissionRequest = {
+            tool,
+            description,
+            reqId: reqId ?? 0,
+            permId: permId ?? "",
+            agentName,
+          };
+          handleIncomingPermission(request, agentName || bossAgent.name);
         },
       };
 
+      // Fire-and-forget: boss returns immediately, employees work in background
+      runAgentTeamsInBackground(
+        orchestration,
+        bossAgent,
+        userText,
+        teamCallbacks,
+        bossTodos,
+        agentStatuses,
+      );
+
+      // Boss goes idle and can handle new messages
+      onUpdateAgent({
+        ...bossAgent,
+        status: "idle",
+        currentThought: "Team is working on it",
+      });
+
+      return "Delegating via Agent Teams... employees are working.";
+    }
+
+    /** Run Agent Teams orchestration in background — boss stays responsive */
+    async function runAgentTeamsInBackground(
+      orchestration: ActiveOrchestration,
+      bossAgent: Agent,
+      userText: string,
+      teamCallbacks: AgentTeamCallbacks,
+      bossTodos: AgentTodo[],
+      agentStatuses: Map<string, "working" | "done" | "error">,
+    ) {
       try {
         const result = await routeTasksViaClaudeCode(
           userText,
           agents,
-          callbacks,
+          teamCallbacks,
           abortRef.current?.signal,
           debugMode ? (line) => addDebug(line) : undefined,
           bossAgent.sessionId,
           true, // enableAgentTeams
         );
 
-        // Track cost
-        if (result.cost && result.cost > 0) {
+        // Persist session for resume
+        if (result.sessionId) {
+          bossSessionId = result.sessionId;
+        }
+
+        // Per-agent cost tracking
+        if (result.agentCosts) {
+          for (const [agentNameLower, costs] of Object.entries(result.agentCosts)) {
+            const emp = agents.find(
+              (a) => a.name.toLowerCase() === agentNameLower,
+            );
+            if (emp && costs.cost > 0) {
+              addCumulativeCost(
+                emp.id,
+                emp.name,
+                costs.cost,
+                costs.inputTokens,
+                costs.outputTokens,
+                emp.id,
+              );
+            }
+          }
+        } else if (result.cost && result.cost > 0) {
+          // Fallback: attribute total cost to boss
           addCumulativeCost(
             bossAgent.id,
             bossAgent.name,
@@ -668,44 +971,113 @@ export default function ChatWindow({
           );
         }
 
-        // Persist session for resume
-        if (result.sessionId) {
-          onUpdateAgent({
-            ...bossAgent,
-            sessionId: result.sessionId,
-            status: "idle",
-            currentThought: "Agent Teams run complete",
-          });
-        } else {
-          onUpdateAgent({
-            ...bossAgent,
-            status: "idle",
-            currentThought: "Agent Teams run complete",
-          });
+        // Mark all boss todos as done
+        for (const todo of bossTodos) {
+          if (todo.status !== "done") todo.status = "done";
         }
+
+        // Compile structured results
+        const delegated = result.delegatedAgents || [];
+        const successCount = [...agentStatuses.values()].filter((s) => s === "done").length;
+        const failCount = [...agentStatuses.values()].filter((s) => s === "error").length;
+        const statusLine =
+          failCount === 0
+            ? `All ${successCount || delegated.length} task${(successCount || delegated.length) !== 1 ? "s" : ""} completed successfully!`
+            : `${successCount}/${successCount + failCount} tasks completed. ${failCount} failed.`;
+
+        const structuredResults = delegated.map((name) => ({
+          agent: name,
+          success: agentStatuses.get(name.toLowerCase()) === "done",
+          reply: "",
+        }));
+
+        const finalText =
+          `${orchestration.progressText}\n\n---\n\n` +
+          `**Results:**\n<!--TASK_RESULTS:${JSON.stringify(structuredResults)}:END_TASK_RESULTS-->\n\n` +
+          `---\n${failCount === 0 ? "✅" : "⚠️"} **${statusLine}**\n\n` +
+          (result.text || "");
+
+        // Append completion message to boss history
+        const completionMsg: Message = {
+          role: "assistant",
+          content: finalText,
+          timestamp: Date.now(),
+        };
+        onUpdateAgent({
+          ...bossAgent,
+          sessionId: bossSessionId,
+          todos: [
+            ...(bossAgent.todos || []).filter(
+              (t) => !bossTodos.some((bt) => bt.id === t.id),
+            ),
+            ...bossTodos,
+          ],
+          history: [...bossAgent.history, completionMsg],
+          status: "idle",
+          currentThought: "",
+        });
 
         // Reset employee statuses
         for (const emp of agents.filter((a) => !a.isBoss)) {
-          onUpdateAgent({ ...emp, status: "idle", currentThought: "" });
+          onUpdateAgent({
+            ...emp,
+            status: "idle",
+            currentThought: "",
+            liveStreamText: "",
+            liveToolCalls: [],
+            liveThinking: "",
+          });
         }
 
+        // Clear orchestration tracking
+        activeOrchestrationRef.current = null;
+
+        // Notify parent
         onOrchestrationDone?.({
-          success: 1,
-          failed: 0,
+          success: successCount || delegated.length,
+          failed: failCount,
           plan: "Agent Teams orchestration",
-          agents: agents.filter((a) => !a.isBoss).map((a) => a.name),
+          agents: delegated,
         });
 
-        return result.text || "(No output from Agent Teams)";
+        // If triggered by a channel message, send results back
+        if (orchestration.channelContext?.channelId) {
+          try {
+            onUpdateAgent({
+              ...bossAgent,
+              status: "working",
+              currentThought: "Sending reply...",
+            });
+            const sendPrompt =
+              `Here are the results from the tasks you delegated:\n\n${finalText}\n\n` +
+              `Now send a concise summary of these results back to the person who messaged you. ` +
+              `Use the send_message tool with the channelId and conversationId from the original message. ` +
+              `Original message context: ${orchestration.channelContext.originalMessage.slice(0, 500)}\n` +
+              `Keep the reply short and helpful.`;
+            await handleRegularChat(bossAgent, sendPrompt);
+          } catch {
+            console.warn("[boss] Failed to send channel reply after Agent Teams");
+          } finally {
+            onUpdateAgent({
+              ...bossAgent,
+              status: "idle",
+              currentThought: "",
+            });
+          }
+        }
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : "Unknown error";
         if (debugMode) addDebug(`[teams] Error: ${errMsg}`);
+        activeOrchestrationRef.current = null;
         onUpdateAgent({
           ...bossAgent,
           status: "idle",
           currentThought: "",
         });
-        throw err;
+        // Reset employee statuses on error too
+        for (const emp of agents.filter((a) => !a.isBoss)) {
+          onUpdateAgent({ ...emp, status: "idle", currentThought: "" });
+        }
       }
     }
 
@@ -733,11 +1105,38 @@ export default function ChatWindow({
         model: bossAgent.model,
         provider: bossAgent.provider,
       };
+
+      // Include recent conversation history so the router has context about
+      // previous tasks and can handle follow-up questions properly.
+      let instructionWithContext = userText;
+      if (bossAgent.history.length > 0) {
+        const recentMessages = bossAgent.history.slice(-10); // last 10 messages
+        const historyLines = recentMessages
+          .map((m) => {
+            const prefix = m.role === "user" ? "User" : "Boss";
+            // Trim long messages but keep enough for context
+            const content =
+              m.content.length > 500
+                ? m.content.slice(0, 500) + "..."
+                : m.content;
+            return `${prefix}: ${content}`;
+          })
+          .join("\n\n");
+        instructionWithContext = `## Recent conversation history\n${historyLines}\n\n## Current instruction\n${userText}`;
+      }
+
       const result = await routeTasks(
-        userText,
+        instructionWithContext,
         employees,
         EMPTY_KEYS,
         routerModel,
+        abortRef.current?.signal,
+        (text) => {
+          setStreamingText(text);
+        },
+        (request) => {
+          handleIncomingPermission(request, bossAgent.name);
+        },
       );
 
       // Track boss planning cost
@@ -752,9 +1151,17 @@ export default function ChatWindow({
         );
       }
 
+      // Check abort after planning
+      if (abortRef.current?.signal.aborted) {
+        onUpdateAgent({ ...bossAgent, status: "idle", currentThought: "" });
+        setStreamingText("");
+        return "Stopped.";
+      }
+
       // If the boss answered directly (simple question), return immediately
       if (result.directAnswer) {
-        if (debugMode) addDebug(`[boss] Answered directly — no delegation needed`);
+        if (debugMode)
+          addDebug(`[boss] Answered directly — no delegation needed`);
         onUpdateAgent({ ...bossAgent, status: "idle", currentThought: "" });
         setStreamingText("");
         return result.directAnswer;
@@ -767,8 +1174,7 @@ export default function ChatWindow({
 
       // ── Step 2: Create new agents if needed ──
       const newAgents: Agent[] = [];
-      const wsDir =
-        localStorage.getItem("outworked_workspace_dir") || undefined;
+      const wsDir = (await getSetting("outworked_workspace_dir")) || undefined;
       for (const spec of result.newAgents) {
         if (
           employees.find(
@@ -818,11 +1224,23 @@ export default function ChatWindow({
 
       if (assignments.length === 0) {
         // No tasks to delegate — answer the user directly instead of failing
-        if (debugMode) addDebug(`[boss] No assignments — falling back to direct answer`);
-        onUpdateAgent({ ...bossAgent, status: "thinking", currentThought: "Answering directly..." });
+        if (debugMode)
+          addDebug(`[boss] No assignments — falling back to direct answer`);
+        onUpdateAgent({
+          ...bossAgent,
+          status: "thinking",
+          currentThought: "Answering directly...",
+        });
         setStreamingText("");
         const directReply = await handleRegularChat(bossAgent, userText);
         return directReply;
+      }
+
+      // Check abort before execution
+      if (abortRef.current?.signal.aborted) {
+        onUpdateAgent({ ...bossAgent, status: "idle", currentThought: "" });
+        setStreamingText("");
+        return "Stopped.";
       }
 
       // ── Step 4: Create todos on Boss ──
@@ -861,10 +1279,103 @@ export default function ChatWindow({
               : "";
           return `- ${prefix}**${a.agentName}**: ${a.task}${subtaskList}`;
         })
-        .join("\n")}\n\n⏳ Executing tasks...\n`;
+        .join("\n")}\n\n⏳ Delegated — employees are working...\n`;
       setStreamingText(progress);
 
-      // ── Step 5: Execute tasks — parallel within groups, sequential across groups ──
+      // ── Track active orchestration so the boss can respond to messages while employees work ──
+      const wasChannelMessage = bossAgent.status === "channel-message";
+      const orchAssignments: OrchestrationAssignment[] = assignments.map(
+        (a) => ({
+          agentId: a.agentId,
+          agentName: a.agentName,
+          task: a.task,
+          subtasks: a.subtasks,
+          group: a.group ?? 1,
+          status: "pending" as const,
+        }),
+      );
+      const orchestration: ActiveOrchestration = {
+        id: crypto.randomUUID(),
+        plan: result.plan,
+        assignments: orchAssignments,
+        startedAt: Date.now(),
+        channelContext: wasChannelMessage
+          ? extractChannelContext(userText)
+          : undefined,
+        progressText: progress,
+      };
+      activeOrchestrationRef.current = orchestration;
+
+      // ── Step 5: Execute tasks in background ──
+      // Fire-and-forget: the boss returns to idle and can handle new messages
+      // while employees work. Completion is handled asynchronously.
+      runOrchestrationInBackground(
+        orchestration,
+        bossAgent,
+        assignments,
+        allEmployees,
+        bossTodos,
+        progress,
+        result.plan,
+      ).catch((err) => {
+        console.error("[boss] Background orchestration failed:", err);
+        activeOrchestrationRef.current = null;
+        // Reset any employees that were set to working
+        for (const a of allEmployees) {
+          onUpdateAgent({ ...a, status: "idle", currentThought: "" });
+        }
+        onUpdateAgent({
+          ...bossAgent,
+          status: "idle",
+          currentThought: `Orchestration error: ${err?.message || err}`,
+        });
+      });
+
+      // Boss is now free — return the plan as the immediate reply
+      onUpdateAgent({
+        ...bossAgent,
+        todos: [...(bossAgent.todos || []), ...bossTodos],
+        status: "idle",
+        currentThought: "Team is working on it",
+      });
+
+      return progress;
+    }
+
+    /** Extract channel context from the trigger prompt for later reply */
+    function extractChannelContext(
+      prompt: string,
+    ): ActiveOrchestration["channelContext"] {
+      // Trigger prompts typically contain channelId and conversationId
+      const channelMatch = prompt.match(/channelId[:\s]*["']?([^"'\s,]+)/i);
+      const convMatch = prompt.match(/conversationId[:\s]*["']?([^"'\s,]+)/i);
+      const senderMatch = prompt.match(
+        /(?:from|sender)[:\s]*["']?([^"'\s,]+)/i,
+      );
+      return {
+        channelId: channelMatch?.[1] || "",
+        conversationId: convMatch?.[1],
+        sender: senderMatch?.[1],
+        originalMessage: prompt,
+      };
+    }
+
+    /** Run orchestration execution in background — employees work while boss is free */
+    async function runOrchestrationInBackground(
+      orchestration: ActiveOrchestration,
+      bossAgent: Agent,
+      assignments: {
+        agentId: string;
+        agentName: string;
+        task: string;
+        subtasks: string[];
+        group?: number;
+      }[],
+      allEmployees: Agent[],
+      bossTodos: AgentTodo[],
+      progress: string,
+      plan: string,
+    ) {
       const taskResults: {
         agentName: string;
         success: boolean;
@@ -895,11 +1406,6 @@ export default function ChatWindow({
             addDebug(
               `[boss] ⚡ Group ${groupNum}: running ${groupTasks.length} tasks in PARALLEL`,
             );
-          setStreamingText(
-            (s) =>
-              s +
-              `\n⚡ **Running ${groupTasks.length} tasks in parallel** (group ${groupNum})…\n`,
-          );
         }
 
         // Execute a single agent's task (used both for parallel and sequential)
@@ -918,12 +1424,16 @@ export default function ChatWindow({
             return;
           }
 
+          // Update orchestration tracking
+          orchestration.assignments[idx].status = "running";
+
           // Mark boss todo in-progress
           bossTodos[idx] = { ...bossTodos[idx], status: "in-progress" };
+          const bossNow = agentsRef.current.find((a) => a.id === bossAgent.id) || bossAgent;
           onUpdateAgent({
-            ...bossAgent,
+            ...bossNow,
             todos: [
-              ...(bossAgent.todos || []).filter(
+              ...(bossNow.todos || []).filter(
                 (t) => !bossTodos.some((bt) => bt.id === t.id),
               ),
               ...bossTodos,
@@ -1005,7 +1515,7 @@ export default function ChatWindow({
                 onUpdateAgent({
                   ...currentAgent,
                   status: "working",
-                  currentThought: partial.slice(0, 70),
+                  currentThought: tailThought(partial),
                   liveStreamText: partial,
                 }),
               abortRef.current?.signal,
@@ -1084,21 +1594,25 @@ export default function ChatWindow({
                   }
                 }
               },
-              // Slow warning (2 min): soft banner, no abort
+              // Slow warning (5 min): soft banner, no abort
               (agentName) => {
                 onUpdateAgent({
                   ...currentAgent,
                   status: "slow",
-                  currentThought: `No progress for 2 minutes — may be running a long operation`,
+                  currentThought: `No progress for 5 minutes — may be running a long operation`,
                 });
               },
-              // Stuck detection (5 min): enables abort
+              // Stuck detection (10 min): enables abort
               (agentName) => {
                 onUpdateAgent({
                   ...currentAgent,
                   status: "stuck",
-                  currentThought: `No progress for 5 minutes`,
+                  currentThought: `No progress for 10 minutes`,
                 });
+              },
+              // Permission requests — surface to UI
+              (request) => {
+                handleIncomingPermission(request, currentAgent.name);
               },
             );
 
@@ -1144,6 +1658,10 @@ export default function ChatWindow({
               liveThinking: undefined,
             });
 
+            // Update orchestration tracking
+            orchestration.assignments[idx].status = "done";
+            orchestration.assignments[idx].result = fullReply.slice(0, 200);
+
             bossTodos[idx] = { ...bossTodos[idx], status: "done" };
             taskResults[idx] = {
               agentName: assignment.agentName,
@@ -1170,6 +1688,9 @@ export default function ChatWindow({
               liveToolCalls: undefined,
               liveThinking: undefined,
             });
+
+            // Update orchestration tracking
+            orchestration.assignments[idx].status = "error";
 
             bossTodos[idx] = { ...bossTodos[idx], status: "error" };
             taskResults[idx] = {
@@ -1228,32 +1749,23 @@ export default function ChatWindow({
           );
       }
 
-      // ── Step 6: Summary ──
-      // Update boss todos (bossAgent is stale but bossTodos were mutated with correct statuses)
+      // ── Step 6: Orchestration complete — compile results ──
+      activeOrchestrationRef.current = null;
+
+      // Use agentsRef to get the CURRENT boss state — bossAgent from the
+      // closure is stale and would overwrite history/todos added since then.
+      const currentBoss = agentsRef.current.find((a) => a.id === bossAgent.id) || bossAgent;
+
       const finalBossTodos = [
-        ...(bossAgent.todos || []).filter(
+        ...(currentBoss.todos || []).filter(
           (t) => !bossTodos.some((bt) => bt.id === t.id),
         ),
         ...bossTodos,
       ];
-      // Capture for the outer handleSend so the final agent update preserves them
-      orchestrationTodos = finalBossTodos;
-      onUpdateAgent({
-        ...bossAgent,
-        todos: finalBossTodos,
-        status: "idle",
-        currentThought: "All tasks completed",
-      });
-
-      // NOTE: Do NOT reset employees here — the individual task handlers above
-      // already set each agent to idle with the correct todos/history.
-      // Spreading stale `emp` refs would overwrite their completed todos.
 
       const successCount = taskResults.filter((t) => t?.success).length;
       const failCount = taskResults.filter((t) => t && !t.success).length;
 
-      // Encode results as structured JSON so the renderer can display them
-      // as individual cards instead of a single markdown blob.
       const structuredResults = taskResults
         .filter(
           (tr): tr is { agentName: string; success: boolean; reply: string } =>
@@ -1269,17 +1781,58 @@ export default function ChatWindow({
           ? `All ${successCount} task${successCount !== 1 ? "s" : ""} completed successfully!`
           : `${successCount}/${successCount + failCount} tasks completed. ${failCount} failed.`;
       const finalText = `${progress}\n---\n\n**Results:**\n<!--TASK_RESULTS:${JSON.stringify(structuredResults)}:END_TASK_RESULTS-->\n\n---\n${failCount === 0 ? "✅" : "⚠️"} **${statusLine}**`;
-      setStreamingText(finalText);
+
+      // Append the completion summary to boss's chat history
+      const completionMsg: Message = {
+        role: "assistant",
+        content: finalText,
+        timestamp: Date.now(),
+      };
+      onUpdateAgent({
+        ...currentBoss,
+        todos: finalBossTodos,
+        history: [...currentBoss.history, completionMsg],
+        status: "idle",
+        currentThought: "",
+      });
 
       // Notify parent so it can show a toast over the office
       onOrchestrationDone?.({
         success: successCount,
         failed: failCount,
-        plan: result.plan,
+        plan,
         agents: assignments.map((a) => a.agentName),
       });
 
-      return finalText;
+      // If this was triggered by a channel message, send the results back
+      if (orchestration.channelContext?.channelId) {
+        try {
+          const bossThen = agentsRef.current.find((a) => a.id === bossAgent.id) || bossAgent;
+          onUpdateAgent({
+            ...bossThen,
+            status: "working",
+            currentThought: "📤 Sending reply...",
+          });
+          const sendPrompt =
+            `Here are the results from the tasks you delegated:\n\n${finalText}\n\n` +
+            `Now send a concise summary of these results back to the person who messaged you. ` +
+            `Use the send_message tool with the channelId and conversationId from the original message. ` +
+            `Original message context: ${orchestration.channelContext.originalMessage.slice(0, 500)}\n` +
+            `Keep the reply short and helpful.`;
+          await handleRegularChat(bossThen, sendPrompt);
+        } catch {
+          console.warn(
+            "[boss] Failed to send channel reply after orchestration",
+          );
+        } finally {
+          const bossNow = agentsRef.current.find((a) => a.id === bossAgent.id) || bossAgent;
+          onUpdateAgent({
+            ...bossNow,
+            status: "idle",
+            currentThought: "",
+          });
+        }
+      }
     }
 
     // ── Regular agent chat flow ──────────────────────────────────
@@ -1290,7 +1843,7 @@ export default function ChatWindow({
       const otherAgents = agents.filter(
         (a) => a.id !== agentState.id && !a.isBoss,
       );
-      const result = await sendMessageWithCost(
+      const result = await sendMessage(
         agentState,
         userText,
         EMPTY_KEYS,
@@ -1299,8 +1852,7 @@ export default function ChatWindow({
           onUpdateAgent({
             ...agentState,
             status: "speaking",
-            currentThought:
-              partial.slice(0, 80) + (partial.length > 80 ? "..." : ""),
+            currentThought: tailThought(partial, 80),
           });
         },
         abortRef.current!.signal,
@@ -1392,8 +1944,7 @@ export default function ChatWindow({
               }
             : undefined,
           onPermissionRequest: (request) => {
-            setPendingPermission(request);
-            onPermissionNotification?.(agentState.name, request);
+            handleIncomingPermission(request, agentState.name);
           },
           onStderr: debugMode
             ? (text) => addDebug(`[stderr] ${text.trim()}`)
@@ -1416,6 +1967,16 @@ export default function ChatWindow({
         );
       }
 
+      // Warn if tools were denied — agent may have produced incomplete results
+      if (result.permissionDenials && result.permissionDenials.length > 0) {
+        const toolNames = [
+          ...new Set(result.permissionDenials.map((d) => d.tool_name)),
+        ];
+        addDebug(
+          `[permissions] ${result.permissionDenials.length} tool use(s) denied: ${toolNames.join(", ")}`,
+        );
+      }
+
       // Handle any [ASK:Name] collaboration requests in the reply
       const collabContext = await handleCollaborationRequests(
         agentState,
@@ -1424,7 +1985,7 @@ export default function ChatWindow({
       );
       if (collabContext) {
         // Send a follow-up with the colleague responses so the agent can incorporate them
-        const followUpResult = await sendMessageWithCost(
+        const followUpResult = await sendMessage(
           {
             ...agentState,
             history: [
@@ -1440,14 +2001,13 @@ export default function ChatWindow({
             onUpdateAgent({
               ...agentState,
               status: "speaking",
-              currentThought:
-                partial.slice(0, 80) + (partial.length > 80 ? "..." : ""),
+              currentThought: tailThought(partial, 80),
             });
           },
           abortRef.current!.signal,
           {
             skills,
-            useTools: false,
+            useTools: true,
             colleagues: otherAgents.map((a) => ({
               name: a.name,
               role: a.role,
@@ -1513,7 +2073,7 @@ export default function ChatWindow({
       const otherAgents = agents.filter(
         (a) => a.id !== updatedWithUser.id && !a.isBoss,
       );
-      const result = await sendMessageWithCost(
+      const result = await sendMessage(
         updatedWithUser,
         userText,
         EMPTY_KEYS,
@@ -1521,7 +2081,7 @@ export default function ChatWindow({
           onUpdateAgent({
             ...updatedWithUser,
             status: "background" as AgentStatus,
-            currentThought: `🔄 ${partial.slice(0, 60)}${partial.length > 60 ? "…" : ""}`,
+            currentThought: `🔄 ${tailThought(partial, 60)}`,
           });
         },
         undefined, // no abort signal for background tasks
@@ -1540,7 +2100,7 @@ export default function ChatWindow({
               }
             : undefined,
           onPermissionRequest: (request) => {
-            onPermissionNotification?.(updatedWithUser.name, request);
+            handleIncomingPermission(request, updatedWithUser.name);
           },
           colleagues: otherAgents.map((a) => ({ name: a.name, role: a.role })),
         },
@@ -1556,7 +2116,7 @@ export default function ChatWindow({
         ...updatedWithUser,
         history: [...updatedWithUser.history, assistantMsg],
         status: "idle",
-        currentThought: reply.slice(0, 80) + (reply.length > 80 ? "..." : ""),
+        currentThought: tailThought(reply, 80),
       };
       return { reply, agent: finalAgent };
     };
@@ -1571,8 +2131,54 @@ export default function ChatWindow({
     }
   }
 
+  // Agent is busy if it's in a non-idle working state (e.g. background task from boss)
+  const agentBusy =
+    !!agent &&
+    !agent.isBoss &&
+    agent.status !== "idle" &&
+    agent.status !== "stuck" &&
+    agent.status !== "waiting-input" &&
+    agent.status !== "waiting-approval";
+
   function handleStop() {
-    abortRef.current?.abort();
+    if (abortRef.current) {
+      abortRef.current.abort();
+    } else if (agent && agentBusy) {
+      // Background agent with no abort controller — reset to idle
+      onUpdateAgent({
+        ...agent,
+        status: "idle",
+        currentThought: "",
+        liveStreamText: "",
+        liveToolCalls: [],
+        liveThinking: "",
+      });
+    }
+  }
+
+  // Handle an incoming permission request: log to chat, auto-approve if enabled, or show modal
+  function handleIncomingPermission(request: PermissionRequest, agentName?: string) {
+    // Stream the tool request description into the chat log (lightweight, no agent state mutation)
+    setPermissionLog((prev) => [
+      ...prev,
+      {
+        tool: request.tool,
+        description: request.description,
+        agentName: request.agentName || agentName,
+        timestamp: Date.now(),
+        autoApproved: !!autoApprovePermissions,
+      },
+    ]);
+
+    // Auto-approve if the setting is enabled
+    if (autoApprovePermissions) {
+      resolveClaudePermission(request.permId, true);
+      return;
+    }
+
+    // Show modal
+    setPendingPermission(request);
+    onPermissionNotification?.(agentName || agent?.name || "Unknown", request);
   }
 
   async function handlePermissionResponse(allow: boolean) {
@@ -2168,51 +2774,42 @@ export default function ChatWindow({
               </div>
             </div>
           )}
-        {pendingPermission && (
-          <div className="mx-auto max-w-[90%] bg-amber-900/40 border border-amber-600/50 rounded-lg p-3 animate-slide-up">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-amber-400 text-sm">🔒</span>
-              <span className="text-[11px] font-pixel text-amber-200">
-                Permission Requested
+        {/* Permission log entries streamed into chat */}
+        {permissionLog.map((entry, i) => (
+          <div
+            key={`perm-${i}`}
+            className="mx-auto max-w-[90%] bg-amber-900/20 border border-amber-700/30 rounded px-3 py-1.5 animate-slide-up"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-[10px]">
+                {entry.autoApproved ? "⚡" : "🔒"}
               </span>
-              {pendingPermission.agentName && (
-                <span className="text-[10px] text-amber-400/60">
-                  by {pendingPermission.agentName}
+              <span className="text-[10px] font-mono text-amber-300 font-bold">
+                {entry.tool}
+              </span>
+              {entry.agentName && (
+                <span className="text-[9px] text-amber-400/50">
+                  {entry.agentName}
+                </span>
+              )}
+              {entry.autoApproved && (
+                <span className="text-[9px] text-emerald-400/70 ml-auto">
+                  auto-approved
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-amber-100/80 font-mono mb-1">
-              <span className="text-amber-300 font-bold">
-                {pendingPermission.tool}
-              </span>
+            <p className="text-[9px] text-amber-200/50 mt-0.5 truncate">
+              {entry.description}
             </p>
-            <p className="text-[10px] text-amber-200/60 mb-1">
-              {pendingPermission.description}
-            </p>
-            {pendingPermission.input &&
-              Object.keys(pendingPermission.input).length > 0 && (
-                <pre className="text-[9px] text-amber-200/40 font-mono bg-black/30 rounded px-2 py-1 mb-2 max-h-20 overflow-y-auto whitespace-pre-wrap break-all">
-                  {JSON.stringify(pendingPermission.input, null, 2).slice(
-                    0,
-                    500,
-                  )}
-                </pre>
-              )}
-            <div className="flex gap-2">
-              <button
-                onClick={() => handlePermissionResponse(true)}
-                className="btn-pixel text-[10px] bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-0.5"
-              >
-                ✓ Allow
-              </button>
-              <button
-                onClick={() => handlePermissionResponse(false)}
-                className="btn-pixel text-[10px] bg-red-700 hover:bg-red-600 text-white px-3 py-0.5"
-              >
-                ✕ Deny
-              </button>
-            </div>
           </div>
+        ))}
+
+        {/* Permission modal rendered at top level via portal-like z-50 */}
+        {pendingPermission && (
+          <PermissionModal
+            request={pendingPermission}
+            onRespond={handlePermissionResponse}
+          />
         )}
         <div ref={bottomRef} />
       </div>
@@ -2271,23 +2868,24 @@ export default function ChatWindow({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={`Message ${agent.name}...`}
-            disabled={isStreaming}
+            disabled={isStreaming || agentBusy}
             rows={2}
             className="input-mono flex-1 bg-slate-800 border border-gray-600 rounded-md px-3 py-2 text-sm font-sans text-white placeholder-slate-400 resize-none focus:outline-none focus:border-indigo-500 disabled:opacity-50"
           />
-          {isStreaming ? (
+          {isStreaming || agentBusy ? (
             <button
               onClick={handleStop}
-              className="px-2 py-1 bg-red-600 hover:bg-red-500 text-white text-[11px] font-pixel rounded transition-colors"
+              className="px-2 py-1 bg-red-600 hover:bg-red-500 text-white text-[11px] font-pixel rounded transition-colors cursor-pointer"
             >
               stop
             </button>
           ) : (
             <div className="flex flex-col gap-1">
               <button
+                id="chat-send-btn"
                 onClick={handleSend}
                 disabled={!input.trim()}
-                className="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-[11px] font-pixel rounded transition-colors"
+                className="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-[11px] font-pixel rounded transition-colors cursor-pointer"
               >
                 send
               </button>
@@ -2300,7 +2898,7 @@ export default function ChatWindow({
                       (t) => t.agentId === agent.id && t.status === "running",
                     )
                   }
-                  className="px-2 py-0.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-30 text-slate-300 text-[9px] font-pixel rounded transition-colors"
+                  className="px-2 py-0.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-30 text-slate-300 text-[9px] font-pixel rounded transition-colors cursor-pointer"
                   title="Run in background — continue working while this agent processes"
                 >
                   bg

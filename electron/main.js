@@ -22,6 +22,75 @@ app.setName("Outworked");
 const verbose = process.env.VERBOSE_LOGGING === "true";
 let mainWindow = null;
 
+// ─── Preview window ─────────────────────────────────────────────
+// A separate BrowserWindow that shows detected local dev-server URLs.
+let previewWindow = null;
+
+// Matches common local dev-server URLs in terminal output
+const LOCAL_URL_RE =
+  /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d{2,5}/gi;
+
+// Cooldown to avoid opening the same URL repeatedly (ms)
+const PREVIEW_COOLDOWN_MS = 5_000;
+let lastPreviewUrl = "";
+let lastPreviewTime = 0;
+
+/**
+ * Open (or reuse) the preview window and navigate to the given URL.
+ * Normalises 0.0.0.0 → localhost so the browser can actually connect.
+ */
+function openPreviewWindow(rawUrl) {
+  const url = rawUrl.replace("0.0.0.0", "localhost");
+
+  // Cooldown: skip if same URL was opened very recently
+  const now = Date.now();
+  if (url === lastPreviewUrl && now - lastPreviewTime < PREVIEW_COOLDOWN_MS) {
+    return;
+  }
+  lastPreviewUrl = url;
+  lastPreviewTime = now;
+
+  if (previewWindow && !previewWindow.isDestroyed()) {
+    previewWindow.loadURL(url);
+    previewWindow.focus();
+    return;
+  }
+
+  previewWindow = new BrowserWindow({
+    width: 1024,
+    height: 768,
+    title: "Outworked — Preview",
+    backgroundColor: "#ffffff",
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  previewWindow.loadURL(url);
+
+  previewWindow.on("closed", () => {
+    previewWindow = null;
+  });
+
+  // Notify the renderer that a preview was opened
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("preview:opened", url);
+  }
+}
+
+/**
+ * Scan a chunk of text for local dev-server URLs and open a preview.
+ */
+function detectAndPreview(text) {
+  const matches = text.match(LOCAL_URL_RE);
+  if (matches && matches.length > 0) {
+    // Use the last match — typically the one the server prints as "ready"
+    openPreviewWindow(matches[matches.length - 1]);
+  }
+}
+
 // ─── Permission helpers ─────────────────────────────────────────
 // Set a permissive umask so directories and files created by Electron
 // (and inherited by Claude Code child processes) are owner+group
@@ -171,6 +240,28 @@ let githubToken = "";
 const shells = new Map(); // id → { proc, cwd }
 // SDK bridge manages active sessions (replaces the old claudeProcs Map)
 
+// Kill a shell process and its entire process tree (child servers like vite, npx serve, etc.)
+function killShellTree(proc) {
+  if (!proc || proc.killed) return;
+  const pid = proc.pid;
+  if (!pid) { proc.kill(); return; }
+  try {
+    // Kill the entire process group — on Unix, passing -pid kills all children
+    process.kill(-pid, "SIGTERM");
+  } catch {
+    // Fallback: kill just the shell process (e.g. if not a process group leader)
+    try { proc.kill("SIGTERM"); } catch { /* already dead */ }
+  }
+}
+
+// Kill all tracked shells and their child process trees
+function killAllShells() {
+  for (const [, entry] of shells) {
+    killShellTree(entry.proc);
+  }
+  shells.clear();
+}
+
 // ─── Caffeinate: prevent sleep while tasks are in flight ──────────
 let caffeinateBlockerId = null;
 
@@ -197,8 +288,37 @@ function caffeineStop() {
 
 /** Call after adding/removing sessions to sync caffeinate state. */
 function syncCaffeinate() {
-  if (sdkBridge.hasActiveSessions()) caffeineStart();
+  const hasChannels = _hasConnectedChannels();
+  if (sdkBridge.hasActiveSessions() || hasChannels) caffeineStart();
   else caffeineStop();
+}
+
+/** Check if any registered channel is currently connected. */
+function _hasConnectedChannels() {
+  try {
+    const channelManager = require("./channels/channel-manager");
+    return channelManager
+      .getChannels()
+      .some((ch) => ch.status === "connected");
+  } catch {
+    return false;
+  }
+}
+
+function setupPreviewIPC() {
+  ipcMain.handle("preview:open", (_event, url) => {
+    if (!url || typeof url !== "string") return false;
+    openPreviewWindow(url);
+    return true;
+  });
+
+  ipcMain.handle("preview:close", () => {
+    if (previewWindow && !previewWindow.isDestroyed()) {
+      previewWindow.close();
+      previewWindow = null;
+    }
+    return true;
+  });
 }
 
 function setupShellIPC() {
@@ -215,13 +335,18 @@ function setupShellIPC() {
       : spawn(SHELL_CMD, ["-l"], {
           cwd: safeCwd,
           env: augmentedEnv({ TERM: "xterm-256color" }),
+          detached: true,
         });
+    // Unref so the shell doesn't prevent the app from exiting
+    proc.unref();
     shells.set(id, { proc, cwd: safeCwd });
 
     proc.stdout.on("data", (data) => {
+      const text = data.toString();
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send("shell:stdout", id, data.toString());
+        mainWindow.webContents.send("shell:stdout", id, text);
       }
+      detectAndPreview(text);
     });
 
     proc.stderr.on("data", (data) => {
@@ -263,11 +388,11 @@ function setupShellIPC() {
     return false;
   });
 
-  // Kill a shell
+  // Kill a shell and all its child processes (dev servers, etc.)
   ipcMain.handle("shell:kill", (_event, id) => {
     const entry = shells.get(id);
     if (entry && entry.proc) {
-      entry.proc.kill();
+      killShellTree(entry.proc);
       shells.delete(id);
       return true;
     }
@@ -455,6 +580,12 @@ function setupShellIPC() {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send("claude-code:event", id, message);
         }
+        // Scan assistant text and tool results for local dev-server URLs
+        const scanText =
+          message.content || message.result || message.output || "";
+        if (typeof scanText === "string") {
+          detectAndPreview(scanText);
+        }
       },
       onHeartbeat: (id) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -482,13 +613,20 @@ function setupShellIPC() {
         if (result && mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send("claude-code:event", id, {
             type: "result",
-            subtype: code === 0 ? "success" : "error_during_execution",
+            subtype: result.subtype || (code === 0 ? "success" : "error_during_execution"),
             result: result.text || "",
             session_id: result.sessionId,
             total_cost_usd: result.cost,
             usage: result.usage,
             is_error: code !== 0,
             errors: error ? [error] : [],
+            duration_ms: result.durationMs,
+            duration_api_ms: result.durationApiMs,
+            num_turns: result.numTurns,
+            stop_reason: result.stopReason,
+            modelUsage: result.modelUsage,
+            permission_denials: result.permissionDenials,
+            structured_output: result.structuredOutput,
           });
         }
         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -875,13 +1013,18 @@ function setupShellIPC() {
   });
 }
 
-// Clean up child processes on quit
+// Clean up child processes and tunnels on quit
 app.on("before-quit", () => {
-  for (const [, entry] of shells) {
-    if (entry.proc && !entry.proc.killed) entry.proc.kill();
-  }
-  shells.clear();
+  killAllShells();
   sdkBridge.abortAll();
+  try {
+    require("./skills/skill-runtime-manager").destroyAll();
+  } catch { /* best effort */ }
+  try {
+    require("./mcp/mcp-server").stopAllTunnels();
+  } catch {
+    /* mcp server may not be loaded */
+  }
   caffeineStop();
 });
 
@@ -931,6 +1074,9 @@ function setupFilesystemIPC() {
   ipcMain.handle("fs:getWorkspace", () => workspaceDir);
 
   ipcMain.handle("fs:setWorkspace", (_event, dir) => {
+    // Kill all running shells (and their child servers) when switching projects
+    killAllShells();
+    sdkBridge.abortAll();
     // Validate: must be an absolute path and not a system-critical directory
     const resolved = path.resolve(dir);
     const blockedRoots = [
@@ -963,6 +1109,9 @@ function setupFilesystemIPC() {
       title: "Choose workspace folder",
     });
     if (result.canceled || result.filePaths.length === 0) return null;
+    // Kill all running shells (and their child servers) when switching projects
+    killAllShells();
+    sdkBridge.abortAll();
     workspaceDir = result.filePaths[0];
     return workspaceDir;
   });
@@ -2089,6 +2238,77 @@ function setupSessionIPC() {
   });
 }
 
+// ─── Database IPC ────────────────────────────────────────────────
+const db = require("./db/database");
+
+function setupDatabaseIPC() {
+  // Wraps a db function so IPC errors are returned to the renderer
+  // instead of crashing the handler or leaving it hanging.
+  const safe =
+    (fn) =>
+    async (_event, ...args) => {
+      try {
+        return await fn(...args);
+      } catch (err) {
+        console.error(`[db-ipc] ${fn.name || "unknown"} failed:`, err);
+        throw err;
+      }
+    };
+
+  // App settings
+  ipcMain.handle("db:setting:get", safe(db.settingGet));
+  ipcMain.handle("db:setting:set", safe(db.settingSet));
+  ipcMain.handle("db:setting:delete", safe(db.settingDelete));
+  ipcMain.handle("db:setting:list", safe(db.settingList));
+
+  // Memory
+  ipcMain.handle("db:memory:set", safe(db.memorySet));
+  ipcMain.handle("db:memory:get", safe(db.memoryGet));
+  ipcMain.handle("db:memory:search", safe(db.memorySearch));
+  ipcMain.handle("db:memory:list", safe(db.memoryList));
+  ipcMain.handle("db:memory:delete", safe(db.memoryDelete));
+
+  // Cost records
+  ipcMain.handle("db:cost:addRecord", safe(db.costAddRecord));
+  ipcMain.handle("db:cost:getAll", safe(db.costGetAll));
+  ipcMain.handle("db:cost:getByAgent", safe(db.costGetByAgent));
+  ipcMain.handle("db:cost:getSince", safe(db.costGetSince));
+  ipcMain.handle("db:cost:clear", safe(db.costClear));
+  ipcMain.handle("db:cost:getCumulative", safe(db.costGetCumulative));
+  ipcMain.handle("db:cost:setCumulative", safe(db.costSetCumulative));
+  ipcMain.handle("db:cost:deleteCumulative", safe(db.costDeleteCumulative));
+  ipcMain.handle("db:cost:getBudgets", safe(db.costGetBudgets));
+  ipcMain.handle("db:cost:setBudget", safe(db.costSetBudget));
+  ipcMain.handle("db:cost:recordDelta", safe(db.costRecordDelta));
+
+  // Triggers
+  ipcMain.handle("db:trigger:create", safe(db.triggerCreate));
+  ipcMain.handle("db:trigger:list", safe(db.triggerList));
+  ipcMain.handle("db:trigger:update", safe(db.triggerUpdate));
+  ipcMain.handle("db:trigger:delete", safe(db.triggerDelete));
+
+  // Channel configs
+  ipcMain.handle("db:channel:configSave", safe(db.channelConfigSave));
+  ipcMain.handle("db:channel:configList", safe(db.channelConfigList));
+  ipcMain.handle("db:channel:configDelete", safe(db.channelConfigDelete));
+
+  // Channel messages
+  ipcMain.handle("db:channel:messageSave", safe(db.channelMessageSave));
+  ipcMain.handle("db:channel:messageList", safe(db.channelMessageList));
+
+  // Skill auth
+  ipcMain.handle("db:skill:authGet", safe(db.skillAuthGet));
+  ipcMain.handle("db:skill:authSave", safe(db.skillAuthSave));
+  ipcMain.handle("db:skill:authDelete", safe(db.skillAuthDelete));
+
+  // Custom skills
+  ipcMain.handle("db:customSkill:create", safe(db.customSkillCreate));
+  ipcMain.handle("db:customSkill:list", safe(db.customSkillList));
+  ipcMain.handle("db:customSkill:get", safe(db.customSkillGet));
+  ipcMain.handle("db:customSkill:update", safe(db.customSkillUpdate));
+  ipcMain.handle("db:customSkill:delete", safe(db.customSkillDelete));
+}
+
 // ─── Auto-updater ───────────────────────────────────────────────
 function setupAutoUpdater() {
   autoUpdater.autoDownload = false;
@@ -2200,16 +2420,19 @@ function createWindow() {
   // When the renderer reloads (Cmd-R, navigation, HMR full reload), abort all
   // active SDK sessions. Without this, the renderer loses its IPC listeners
   // and in-flight sessions become orphaned — agents appear "working" forever.
-  mainWindow.webContents.on("did-start-navigation", (_event, _url, isInPlace) => {
-    if (sdkBridge.hasActiveSessions()) {
-      verbose &&
-        console.log(
-          "[main] renderer navigating — aborting orphaned SDK sessions",
-        );
-      sdkBridge.abortAll();
-      syncCaffeinate();
-    }
-  });
+  mainWindow.webContents.on(
+    "did-start-navigation",
+    (_event, _url, isInPlace) => {
+      if (sdkBridge.hasActiveSessions()) {
+        verbose &&
+          console.log(
+            "[main] renderer navigating — aborting orphaned SDK sessions",
+          );
+        sdkBridge.abortAll();
+        syncCaffeinate();
+      }
+    },
+  );
 
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -2284,6 +2507,7 @@ app.whenReady().then(() => {
     ]),
   );
 
+  setupPreviewIPC();
   setupShellIPC();
   setupFilesystemIPC();
   setupFileWatcherIPC();
@@ -2291,9 +2515,60 @@ app.whenReady().then(() => {
   setupPermissionsIPC();
   setupMusicIPC();
   setupSessionIPC();
+  setupDatabaseIPC();
   setupNotificationIPC();
   setupAutoUpdater();
   createWindow();
+
+  // ─── Initialize channel manager, skill runtimes ──
+  try {
+    const channelManager = require("./channels/channel-manager");
+    channelManager.setOnStatusChange(syncCaffeinate);
+    channelManager.setupChannelIPC(ipcMain, mainWindow);
+  } catch (err) {
+    console.error("[channels] Failed to initialize:", err.message);
+  }
+
+  // ─── Skill runtimes + MCP Server ────────────────────────────────
+  const skillManager = require("./skills/skill-runtime-manager");
+  const mcpServer = require("./mcp/mcp-server");
+  skillManager.discoverAndRegister()
+    .then(() => skillManager.setupSkillRuntimeIPC(ipcMain, mainWindow))
+    .catch((err) => console.error("[skill-runtimes] Failed to initialize:", err.message));
+  mcpServer.setSkillManager(skillManager);
+  mcpServer.start();
+
+  // Clean up any stale outworked-skills entry from Claude Code's settings.json.
+  // MCP is now injected per-session via SDK options as an HTTP server.
+  try {
+    const home = process.env.HOME || "";
+    const settingsPath = path.join(home, ".claude", "settings.json");
+    if (fs.existsSync(settingsPath)) {
+      const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+      if (settings.mcpServers && settings.mcpServers["outworked-skills"]) {
+        delete settings.mcpServers["outworked-skills"];
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), {
+          encoding: "utf-8",
+          mode: FILE_MODE,
+        });
+        console.log("[mcp] Removed stale outworked-skills from settings.json");
+      }
+    }
+  } catch (err) {
+    console.error("[mcp] Failed to clean settings:", err.message);
+  }
+
+  try {
+    const { triggerEngine, WebhookServer } = require("./triggers");
+    triggerEngine.setWindow(mainWindow);
+    triggerEngine.refreshPatterns();
+    triggerEngine.setupTriggerIPC(ipcMain);
+
+    const webhookServer = new WebhookServer();
+    webhookServer.start();
+  } catch (err) {
+    console.error("[triggers] Failed to initialize:", err.message);
+  }
 
   // On startup, ensure the default workspace is accessible
   try {
@@ -2311,6 +2586,12 @@ app.on("window-all-closed", () => {
       /* ignore */
     }
     activeWatcher = null;
+  }
+  // Close SQLite database cleanly
+  try {
+    db.close();
+  } catch {
+    /* ignore */
   }
   app.quit();
 });

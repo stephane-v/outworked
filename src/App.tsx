@@ -16,6 +16,8 @@ import {
 import {
   loadSkills,
   saveSkills,
+  loadGlobalSkillIds,
+  saveGlobalSkillIds,
   createAgent,
   createClaudeAgentFile,
   generateAgentWithAI,
@@ -41,7 +43,6 @@ import ChatWindow, { OrchestrationDoneEvent } from "./components/ChatWindow";
 import TerminalPanel from "./components/TerminalPanel";
 import { InstructionRun } from "./components/OfficeInstructions";
 import AgentTasks from "./components/AgentTasks";
-import SkillsPanel from "./components/SkillsPanel";
 import MusicPlayer from "./components/MusicPlayer";
 import ClaudeCodeStatus from "./components/ClaudeCodeStatus";
 import UpdateBanner from "./components/UpdateBanner";
@@ -52,11 +53,18 @@ import PermissionsPanel, {
 import WorkspacePanel from "./components/WorkspacePanel";
 import GitPanel from "./components/GitPanel";
 import CostDashboard from "./components/CostDashboard";
+import ChannelsPanel from "./components/ChannelsPanel";
 import NotificationCenter, {
   NotificationToast,
 } from "./components/NotificationCenter";
 import OnboardingModal from "./components/OnboardingModal";
 import { AppNotification, showDesktopNotification } from "./lib/notifications";
+import {
+  getSetting,
+  setSetting,
+  getSettingJSON,
+  setSettingJSON,
+} from "./lib/settings";
 import {
   playTaskComplete,
   playApprovalNeeded,
@@ -64,8 +72,9 @@ import {
   playOrchestrationComplete,
   playOrchestrationWarning,
   getSoundsEnabled,
+  initSoundSettings,
 } from "./lib/sounds";
-import { sendClaudeCodeInput, PermissionRequest } from "./lib/terminal";
+import { resolveClaudePermission, PermissionRequest } from "./lib/terminal";
 
 const OfficeCanvas = lazy(() => import("./components/OfficeCanvas"));
 
@@ -133,14 +142,13 @@ export default function App() {
   const [rightPanel, setRightPanel] = useState<RightPanel>("chat");
   const [skills, setSkills] = useState<AgentSkill[]>([]);
   const [instructionRuns, setInstructionRuns] = useState<InstructionRun[]>([]);
-  const [agentTeamsEnabled, setAgentTeamsEnabled] = useState(
-    () => localStorage.getItem("outworked_agent_teams") === "1",
-  );
-  const [permissionPromptsEnabled, setPermissionPromptsEnabled] = useState(
-    () => localStorage.getItem("outworked_permission_prompts") !== "0",
-  );
+  const [agentTeamsEnabled, setAgentTeamsEnabled] = useState(false);
+  const [permissionPromptsEnabled, setPermissionPromptsEnabled] =
+    useState(true);
+  const [autoApproveAll, setAutoApproveAll] = useState(false);
   const [claudeReady, setClaudeReady] = useState(false);
   const [workspaceDir, setWorkspaceDir] = useState<string | null>(null);
+  const workspaceDirRef = useRef<string | null>(null);
   const [showWorkspacePicker, setShowWorkspacePicker] = useState(false);
   const [startupDone, setStartupDone] = useState(false);
   const [hirePrompt, setHirePrompt] = useState<{
@@ -148,37 +156,54 @@ export default function App() {
   } | null>(null);
   const [showPermsModal, setShowPermsModal] = useState(false);
   const [showCostsModal, setShowCostsModal] = useState(false);
+  const [showChannelsModal, setShowChannelsModal] = useState(false);
   const [permsEmpty, setPermsEmpty] = useState(false);
   const [permsDismissed, setPermsDismissed] = useState(false);
-  const [debugMode, setDebugMode] = useState(
-    () => localStorage.getItem("outworked_debug") === "1",
-  );
+  const [debugMode, setDebugMode] = useState(false);
   const [orchToast, setOrchToast] = useState<OrchestrationDoneEvent | null>(
     null,
   );
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [latestToast, setLatestToast] = useState<AppNotification | null>(null);
-  const [showOnboarding, setShowOnboarding] = useState(
-    () => !localStorage.getItem("outworked_onboarding_done"),
-  );
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTask[]>([]);
-  const [furnitureLayout] = useState<
+  const [furnitureLayout, setFurnitureLayout] = useState<
     import("./phaser/OfficeScene").FurnitureItem[] | null
-  >(() => {
-    try {
-      const raw = localStorage.getItem("outworked_furniture_layout");
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  });
+  >(null);
 
   useEffect(() => {
     async function init() {
-      setSkills(loadSkills());
+      // Load persisted settings from SQLite
+      const [
+        savedWs,
+        savedTeams,
+        savedPerms,
+        savedDebug,
+        savedOnboarding,
+        savedFurniture,
+        savedAutoApprove,
+      ] = await Promise.all([
+        getSetting("outworked_workspace_dir"),
+        getSetting("outworked_agent_teams"),
+        getSetting("outworked_permission_prompts"),
+        getSetting("outworked_debug"),
+        getSetting("outworked_onboarding_done"),
+        getSettingJSON<import("./phaser/OfficeScene").FurnitureItem[] | null>(
+          "outworked_furniture_layout",
+          null,
+        ),
+        getSetting("outworked_auto_approve_all"),
+      ]);
+      setAgentTeamsEnabled(savedTeams === "1");
+      setPermissionPromptsEnabled(savedPerms !== "0");
+      setAutoApproveAll(savedAutoApprove === "1");
+      // setDebugMode(savedDebug === "1");
+      setDebugMode(false); // Force debug mode off for now, to avoid accidentally enabling it in production
+      setShowOnboarding(!savedOnboarding);
+      setFurnitureLayout(savedFurniture);
+      await initSoundSettings();
 
-      // Load saved workspace dir
-      const savedWs = localStorage.getItem("outworked_workspace_dir");
+      setSkills(await loadSkills());
 
       // Check Claude Code availability
       let ccReady = false;
@@ -205,22 +230,24 @@ export default function App() {
       if (isElectron()) {
         if (savedWs) {
           setWorkspaceDir(savedWs);
+          workspaceDirRef.current = savedWs;
           await setWorkspace(savedWs);
           watchProjectAgents(savedWs);
         } else {
           const defaultDir = await getWorkspace();
           setWorkspaceDir(defaultDir);
+          workspaceDirRef.current = defaultDir;
           watchProjectAgents(defaultDir);
           setShowWorkspacePicker(true);
         }
       }
 
       // Migrate any existing in-memory history to sessions (one-time)
-      const migrated = localStorage.getItem("outworked_sessions_migrated");
+      const migrated = await getSetting("outworked_sessions_migrated");
       if (!migrated) {
-        const rawAgents = (() => {
+        const rawAgents = await (async () => {
           try {
-            const r = localStorage.getItem("outworked_agents");
+            const r = await getSetting("outworked_agents");
             return r ? JSON.parse(r) : [];
           } catch {
             return [];
@@ -248,7 +275,7 @@ export default function App() {
             }
           }
         }
-        localStorage.setItem("outworked_sessions_migrated", "1");
+        await setSetting("outworked_sessions_migrated", "1");
       }
 
       setStartupDone(true);
@@ -270,17 +297,90 @@ export default function App() {
 
   // Auto-reload when Claude Code agent files change on disk
   useEffect(() => {
-    const unsub = onClaudeAgentsChanged(() => {
-      const wsDir =
-        localStorage.getItem("outworked_workspace_dir") || undefined;
-      loadAgentsFromDisk(wsDir).then((fresh) => {
-        setAgents((prev) => mergeRuntimeState(prev, fresh));
-      });
+    const unsub = onClaudeAgentsChanged(async () => {
+      const wsDir = (await getSetting("outworked_workspace_dir")) || undefined;
+      const fresh = await loadAgentsFromDisk(wsDir);
+      setAgents((prev) => mergeRuntimeState(prev, fresh));
     });
     return unsub;
   }, []);
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId) ?? null;
+
+  // ── Trigger / channel-message listener ──────────────────────────
+  const [pendingMessage, setPendingMessage] = useState<{
+    text: string;
+    nonce: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isElectron()) return;
+    const w = window as unknown as {
+      electronAPI?: {
+        db?: {
+          onTriggerFire?: (
+            cb: (data: {
+              triggerId: string;
+              triggerName: string;
+              agentId: string | null;
+              prompt: string;
+              context?: unknown;
+            }) => void,
+          ) => () => void;
+        };
+      };
+    };
+    const unsub = w.electronAPI?.db?.onTriggerFire?.((data) => {
+      // Find the target agent, fall back to boss
+      const targetAgent =
+        (data.agentId && agents.find((a) => a.id === data.agentId)) ||
+        agents.find((a) => a.isBoss);
+
+      if (!targetAgent) {
+        console.warn(
+          "[Trigger] No target agent found for trigger:",
+          data.triggerName,
+          "| looking for agentId:",
+          data.agentId,
+          "| available agents:",
+          agents.map((a) => ({ id: a.id, name: a.name })),
+        );
+        return;
+      }
+
+      // Select the target agent and inject the prompt
+      setSelectedAgentId(targetAgent.id);
+      setRightPanel("chat");
+      setPendingMessage({ text: data.prompt, nonce: crypto.randomUUID() });
+
+      // Update agent status to show it's handling a channel message
+      setAgents((prev) =>
+        prev.map((a) =>
+          a.id === targetAgent.id
+            ? {
+                ...a,
+                status: "channel-message" as AgentStatus,
+                currentThought: `📨 ${data.triggerName}`,
+              }
+            : a,
+        ),
+      );
+
+      // Safety net: if agent is still in channel-message after 10s, reset to idle.
+      // This catches cases where the auto-send failed silently.
+      const agentId = targetAgent.id;
+      setTimeout(() => {
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.id === agentId && a.status === "channel-message"
+              ? { ...a, status: "idle" as AgentStatus, currentThought: "" }
+              : a,
+          ),
+        );
+      }, 10_000);
+    });
+    return unsub;
+  }, [agents]);
 
   // Hydrate session from disk when selecting an agent with a saved session but empty history
   useEffect(() => {
@@ -315,9 +415,7 @@ export default function App() {
           Object.keys(updated) as (keyof Agent)[]
         ).some((k) => !EPHEMERAL_KEYS.has(k) && updated[k] !== old[k]);
         if (hasPersistentChange) {
-          const wsDir =
-            localStorage.getItem("outworked_workspace_dir") || undefined;
-          saveAgentToDisk(updated, wsDir);
+          saveAgentToDisk(updated, workspaceDirRef.current || undefined);
         }
       }
       return next;
@@ -401,14 +499,7 @@ export default function App() {
 
   const handleFurnitureMove = useCallback(
     (items: import("./phaser/OfficeScene").FurnitureItem[]) => {
-      try {
-        localStorage.setItem(
-          "outworked_furniture_layout",
-          JSON.stringify(items),
-        );
-      } catch {
-        /* ignore quota errors */
-      }
+      setSettingJSON("outworked_furniture_layout", items);
     },
     [],
   );
@@ -420,7 +511,7 @@ export default function App() {
         setHirePrompt({ resolve });
       }).then((description) => {
         setHirePrompt(null);
-        finishHire(description);
+        if (description !== null) finishHire(description);
       });
     } else {
       finishHire(null);
@@ -540,9 +631,7 @@ export default function App() {
       const saved = { ...agent, autoCreated: false };
       const next = prev.map((a) => (a.id === agentId ? saved : a));
       // Rewrite the .md file without the outworked-auto-created flag
-      const wsDir =
-        localStorage.getItem("outworked_workspace_dir") || undefined;
-      saveAgentToDisk(saved, wsDir);
+      saveAgentToDisk(saved, workspaceDirRef.current || undefined);
       return next;
     });
   }, []);
@@ -555,7 +644,7 @@ export default function App() {
   const toggleDebug = useCallback(() => {
     setDebugMode((prev) => {
       const next = !prev;
-      localStorage.setItem("outworked_debug", next ? "1" : "0");
+      setSetting("outworked_debug", next ? "1" : "0");
       return next;
     });
   }, []);
@@ -667,6 +756,7 @@ export default function App() {
         agentName,
         agentColor: agents.find((a) => a.name === agentName)?.color,
         permissionReqId: request.reqId,
+        permissionPermId: request.permId,
         permissionTool: request.tool,
         permissionDesc: request.description,
       });
@@ -698,7 +788,8 @@ export default function App() {
 
   async function handleWorkspaceSelected(dir: string) {
     setWorkspaceDir(dir);
-    localStorage.setItem("outworked_workspace_dir", dir);
+    workspaceDirRef.current = dir;
+    setSetting("outworked_workspace_dir", dir);
     await setWorkspace(dir);
     watchProjectAgents(dir);
     setShowWorkspacePicker(false);
@@ -765,7 +856,6 @@ export default function App() {
             backgroundTasks={backgroundTasks}
             onSaveAgent={handleSaveAutoAgent}
           />
-          <SkillsPanel skills={skills} onUpdate={handleUpdateSkills} />
         </div>
         <div className="px-2 py-1.5 border-t border-gray-800">
           <MusicPlayer />
@@ -775,24 +865,31 @@ export default function App() {
             onClick={() => {
               const next = !agentTeamsEnabled;
               setAgentTeamsEnabled(next);
-              localStorage.setItem("outworked_agent_teams", next ? "1" : "0");
+              setSetting("outworked_agent_teams", next ? "1" : "0");
             }}
             className={`w-full btn-pixel text-[10px] ${agentTeamsEnabled ? "bg-indigo-700 hover:bg-indigo-600 text-indigo-50" : "bg-slate-700 hover:bg-slate-600 text-slate-200"}`}
           >
-            {agentTeamsEnabled ? "👥 Teams ON" : "👤 Teams OFF"}
+            {agentTeamsEnabled ? "Teams ON" : "Teams OFF"}
           </button> */}
           <button
             onClick={() => {
               const next = !permissionPromptsEnabled;
               setPermissionPromptsEnabled(next);
-              localStorage.setItem(
-                "outworked_permission_prompts",
-                next ? "1" : "0",
-              );
+              setSetting("outworked_permission_prompts", next ? "1" : "0");
             }}
             className={`w-full btn-pixel text-[10px] ${!permissionPromptsEnabled ? "bg-amber-700 hover:bg-amber-600 text-amber-50" : "bg-slate-700 hover:bg-slate-600 text-slate-200"}`}
           >
             {permissionPromptsEnabled ? "🔒 Auto Edit OFF" : "🔓 Auto Edit ON"}
+          </button>
+          <button
+            onClick={() => {
+              const next = !autoApproveAll;
+              setAutoApproveAll(next);
+              setSetting("outworked_auto_approve_all", next ? "1" : "0");
+            }}
+            className={`w-full btn-pixel text-[10px] ${autoApproveAll ? "bg-amber-700 hover:bg-amber-600 text-amber-50" : "bg-slate-700 hover:bg-slate-600 text-slate-200"}`}
+          >
+            {autoApproveAll ? "⚡ Auto Approve ON" : "🔒 Auto Approve OFF"}
           </button>
           <NotificationCenter
             notifications={notifications}
@@ -802,8 +899,8 @@ export default function App() {
               )
             }
             onDismissAll={() => setNotifications([])}
-            onApprovalResponse={async (notifId, reqId, allow) => {
-              await sendClaudeCodeInput(reqId, allow ? "yes\n" : "no\n");
+            onApprovalResponse={async (notifId, permId, allow) => {
+              await resolveClaudePermission(permId, allow);
               setNotifications((prev) =>
                 prev.map((n) => (n.id === notifId ? { ...n, read: true } : n)),
               );
@@ -832,11 +929,13 @@ export default function App() {
           </div>
           <div className="flex gap-1.5">
             <button
-              onClick={toggleDebug}
-              className={`flex-1 btn-pixel text-[10px] ${debugMode ? "bg-amber-700 hover:bg-amber-600 text-amber-50" : "bg-slate-700 hover:bg-slate-600 text-slate-200"}`}
+              onClick={() => setShowChannelsModal(true)}
+              className="flex-1 btn-pixel text-[10px] bg-slate-700 hover:bg-slate-600 text-slate-200"
             >
-              🐛 Debug {debugMode ? "ON" : "OFF"}
+              💬 Channels
             </button>
+          </div>
+          <div className="flex gap-1.5">
             <button
               onClick={handleNewProject}
               className="flex-1 btn-pixel text-[10px] bg-red-800 hover:bg-red-700 text-red-100"
@@ -1095,11 +1194,14 @@ export default function App() {
                 onUpdateAgent={updateAgent}
                 onAddAgent={handleAddDynamicAgent}
                 agentTeamsEnabled={agentTeamsEnabled}
+                autoApprovePermissions={autoApproveAll}
                 onOrchestrationDone={handleOrchestrationDone}
                 onPermissionNotification={handlePermissionNotification}
                 debugMode={debugMode}
                 backgroundTasks={backgroundTasks}
                 onStartBackgroundTask={handleStartBackgroundTask}
+                pendingMessage={pendingMessage}
+                onPendingMessageConsumed={() => setPendingMessage(null)}
               />
             </div>
             {/* Editor and Tasks — conditionally rendered (no persistent state to preserve) */}
@@ -1217,10 +1319,45 @@ export default function App() {
         </div>
       )}
 
+      {showChannelsModal && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+          onClick={() => setShowChannelsModal(false)}
+        >
+          <div
+            className="bg-slate-800 border border-slate-600 rounded-lg w-[480px] max-h-[80vh] shadow-xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
+              <h3 className="text-sm font-pixel text-white">
+                💬 Messaging Channels
+              </h3>
+              <button
+                onClick={() => setShowChannelsModal(false)}
+                className="text-slate-400 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+            <div
+              className="flex-1 overflow-y-auto"
+              style={{ minHeight: "400px" }}
+            >
+              <ChannelsPanel />
+            </div>
+          </div>
+        </div>
+      )}
+
       {showOnboarding && startupDone && (
         <OnboardingModal
-          onComplete={() => {
-            localStorage.setItem("outworked_onboarding_done", "1");
+          onComplete={async () => {
+            setSetting("outworked_onboarding_done", "1");
+            // Seed browser & scheduler as default global skills on first launch
+            const existing = await loadGlobalSkillIds();
+            if (existing.length === 0) {
+              await saveGlobalSkillIds(["bundled:browser", "bundled:scheduler"]);
+            }
             setShowOnboarding(false);
           }}
           onOpenPerms={() => setShowPermsModal(true)}
