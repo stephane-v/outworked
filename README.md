@@ -10,7 +10,7 @@
   and run scheduled tasks — all from an office on your Mac.</strong>
 </p>
 <p align="center">
-  <em>No API keys. No config. Just your Claude Code subscription and a can-do attitude!</em>
+  <em>Claude Code with a can-do attitude!</em>
 </p>
 
 <p align="center">
@@ -178,7 +178,7 @@ Grab the latest `.dmg` from the [releases page](https://github.com/outworked/out
 
 ### 2. Prerequisites
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (your existing subscription covers usage — no separate API key needed)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
 
 ### 3. Launch and Hire Your First Agent
 
@@ -381,13 +381,6 @@ Please open a discussion first for large changes so we can discuss the approach.
 ## FAQ
 
 <details>
-<summary><strong>Do I need a Claude API key?</strong></summary>
-
-Nope. Outworked runs on Claude Code, so your existing subscription covers everything. No extra keys or billing to set up.
-
-</details>
-
-<details>
 <summary><strong>Is my code sent to the cloud?</strong></summary>
 
 Outworked runs locally on your machine. The models are run by Anthropic, with the same privacy guarantees as using those APIs directly. So yes.
@@ -411,7 +404,7 @@ Write a markdown file with YAML frontmatter (name, description, tools) and save 
 <details>
 <summary><strong>How much does it cost?</strong></summary>
 
-Outworked is free and open source. The only cost is your Claude Code subscription, which you probably already have. There are no additional fees, usage limits, or API keys to manage.
+Outworked is free and open source. You just need access to Claude Code.
 
 </details>
 
