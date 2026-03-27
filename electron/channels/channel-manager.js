@@ -19,11 +19,21 @@ let _onStatusChange = null;
  * Track recently sent outbound messages so we can ignore them if they
  * echo back as "inbound" (e.g. iMessage DB race conditions).
  * Key: "channelId:conversationId:contentFingerprint"
- * Value: { expiry: number, count: number }
- * @type {Map<string, { expiry: number, count: number }>}
+ * Value: { expiry: number, count: number, content: string }
+ * @type {Map<string, { expiry: number, count: number, content: string }>}
  */
 const _recentOutbound = new Map();
 const OUTBOUND_ECHO_WINDOW_MS = 30_000; // 30 seconds
+
+/**
+ * Track per-conversation recent sends for fuzzy echo detection.
+ * Keyed by normalizedConversationId ONLY (no channelId) so that echoes
+ * arriving on a different channel than the one used to send are still caught.
+ * Key: normalizedConversationId
+ * Value: { expiry: number, contents: string[] }
+ * @type {Map<string, { expiry: number, contents: string[] }>}
+ */
+const _recentConversationSends = new Map();
 
 // ─── Registry management ──────────────────────────────────────
 
@@ -149,6 +159,7 @@ async function sendMessage(channelId, conversationId, content) {
   await channel.sendMessage(conversationId, content);
 
   // Track this outbound so we can detect echo-back in inbound polling
+  const normalized = _normalizeForEcho(content);
   const echoKey = _buildEchoKey(channelId, conversationId, content);
   const existing = _recentOutbound.get(echoKey);
   if (existing && Date.now() < existing.expiry) {
@@ -158,6 +169,20 @@ async function sendMessage(channelId, conversationId, content) {
     _recentOutbound.set(echoKey, {
       expiry: Date.now() + OUTBOUND_ECHO_WINDOW_MS,
       count: 1,
+      content: normalized,
+    });
+  }
+
+  // Also track per-conversation sends for fuzzy echo detection
+  const convKey = _buildConversationKey(channelId, conversationId);
+  const convEntry = _recentConversationSends.get(convKey);
+  if (convEntry && Date.now() < convEntry.expiry) {
+    convEntry.contents.push(normalized);
+    convEntry.expiry = Date.now() + OUTBOUND_ECHO_WINDOW_MS;
+  } else {
+    _recentConversationSends.set(convKey, {
+      expiry: Date.now() + OUTBOUND_ECHO_WINDOW_MS,
+      contents: [normalized],
     });
   }
 
@@ -288,7 +313,9 @@ function setupChannelIPC(ipcMain, mainWindow) {
       // Disconnect the old instance
       try {
         await existing.disconnect();
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
       _registry.delete(id);
 
       // Persist updated config
@@ -367,15 +394,44 @@ function _handleInbound(channelId, msg) {
 
   // ── Echo detection: skip messages that match a recent outbound ──
   _pruneExpiredOutbound();
-  const echoKey = _buildEchoKey(channelId, full.conversationId || "", full.content);
+  const inboundNormalized = _normalizeForEcho(full.content);
+
+  // 1. Exact hash match (fast path)
+  const echoKey = _buildEchoKey(
+    channelId,
+    full.conversationId || "",
+    full.content,
+  );
   const tracked = _recentOutbound.get(echoKey);
   if (tracked) {
-    verbose && console.log(`[ChannelManager] Skipping echo-back: ${echoKey} (remaining: ${tracked.count - 1})`);
+    console.log(
+      `[ChannelManager] Skipping echo-back (exact): ${echoKey} (remaining: ${tracked.count - 1})`,
+    );
     tracked.count -= 1;
     if (tracked.count <= 0) {
       _recentOutbound.delete(echoKey);
     }
     return;
+  }
+
+  // 2. Fuzzy match: check all recent outbound to this conversation
+  //    Catches platform reformatting (smart quotes, link expansion, etc.)
+  const convKey = _buildConversationKey(channelId, full.conversationId || "");
+  const convSends = _recentConversationSends.get(convKey);
+  if (convSends && Date.now() < convSends.expiry) {
+    const matchIdx = convSends.contents.findIndex((sent) =>
+      _isEchoMatch(sent, inboundNormalized),
+    );
+    if (matchIdx !== -1) {
+      console.log(
+        `[ChannelManager] Skipping echo-back (fuzzy) for conversation ${convKey}`,
+      );
+      convSends.contents.splice(matchIdx, 1);
+      if (convSends.contents.length === 0) {
+        _recentConversationSends.delete(convKey);
+      }
+      return;
+    }
   }
 
   // ── Sender allowlist: drop messages from unknown senders ──
@@ -552,11 +608,11 @@ function _buildChannel(config, classes) {
  */
 function _normalizeForEcho(text) {
   return (text || "")
-    .replace(/\\n/g, "\n")       // treat literal "\n" same as newline
-    .replace(/\s+/g, " ")        // collapse all whitespace runs
+    .replace(/\\n/g, "\n") // treat literal "\n" same as newline
+    .replace(/\s+/g, " ") // collapse all whitespace runs
     .trim()
     .toLowerCase()
-    .slice(0, 500);              // cap to keep keys bounded
+    .slice(0, 500); // cap to keep keys bounded
 }
 
 /**
@@ -567,7 +623,7 @@ function _normalizeForEcho(text) {
  */
 function _buildEchoKey(channelId, conversationId, content) {
   const normalized = _normalizeForEcho(content);
-  return `${channelId}:${conversationId || ""}:${_fnv1a(normalized)}`;
+  return `${channelId}:${_normalizeConversationId(conversationId)}:${_fnv1a(normalized)}`;
 }
 
 /** FNV-1a 32-bit hash — better collision resistance than djb2. */
@@ -586,6 +642,93 @@ function _pruneExpiredOutbound() {
   for (const [key, entry] of _recentOutbound) {
     if (now > entry.expiry) _recentOutbound.delete(key);
   }
+  for (const [key, entry] of _recentConversationSends) {
+    if (now > entry.expiry) _recentConversationSends.delete(key);
+  }
+}
+
+/**
+ * Normalise a conversationId for echo key matching.
+ * Strips whitespace, dashes, parens, and lowercases so that phone number
+ * format differences (e.g. "+1 555-550-0100" vs "+15555500100") don't
+ * cause false negatives.
+ */
+function _normalizeConversationId(id) {
+  return (id || "").replace(/[\s\-()\.]/g, "").toLowerCase();
+}
+
+/**
+ * Build a conversation-level key for tracking recent sends.
+ * Intentionally omits channelId so cross-channel echoes are caught
+ * (e.g. agent sends via channel A, echo arrives on channel B).
+ */
+function _buildConversationKey(_channelId, conversationId) {
+  return _normalizeConversationId(conversationId);
+}
+
+/**
+ * Check if an inbound message is a fuzzy echo of a sent message.
+ * Handles platform reformatting like smart quotes, link cards, emoji
+ * substitution, and trailing whitespace differences.
+ *
+ * @param {string} sent      - Normalised outbound content
+ * @param {string} received  - Normalised inbound content
+ * @returns {boolean}
+ */
+function _isEchoMatch(sent, received) {
+  // Exact match after normalization
+  if (sent === received) return true;
+
+  // Prefix match: platform may truncate or append to messages
+  if (
+    sent.length > 10 &&
+    (received.startsWith(sent) || sent.startsWith(received))
+  ) {
+    return true;
+  }
+
+  // Strip all non-alphanumeric and compare (catches smart quotes, unicode subs)
+  const alphaOnly = (s) => s.replace(/[^a-z0-9]/g, "");
+  if (alphaOnly(sent) === alphaOnly(received) && alphaOnly(sent).length > 5) {
+    return true;
+  }
+
+  // Levenshtein similarity: if > 85% similar by character, treat as echo
+  if (sent.length > 10 && received.length > 10) {
+    const similarity = _similarity(sent, received);
+    if (similarity > 0.85) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Fast Levenshtein-based similarity ratio (0..1).
+ * Bails early if the lengths are too different to ever reach the threshold.
+ */
+function _similarity(a, b) {
+  if (a === b) return 1;
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1;
+
+  // Quick bail: if length ratio is already below threshold, skip expensive calc
+  const minLen = Math.min(a.length, b.length);
+  if (minLen / maxLen < 0.7) return minLen / maxLen;
+
+  // Use a single-row DP for space efficiency
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const val = Math.min(row[j] + 1, prev + 1, row[j - 1] + cost);
+      row[j - 1] = prev;
+      prev = val;
+    }
+    row[b.length] = prev;
+  }
+
+  return 1 - row[b.length] / maxLen;
 }
 
 // ─── Exports ──────────────────────────────────────────────────
