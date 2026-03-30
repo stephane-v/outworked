@@ -10,17 +10,19 @@
   and run scheduled tasks — all from an office on your Mac.</strong>
 </p>
 <p align="center">
-  <em>Claude Code with a can-do attitude!</em>
+  <em>Fully customizable — import your own sprites, furniture, backgrounds, and fonts via asset packs.<br/>
+  Claude Code with a can-do attitude!</em>
 </p>
 
 <p align="center">
-  <a href="https://github.com/outworked/outworked/releases/download/v0.3.1/Outworked-0.3.1-arm64.dmg">
-    <img src="https://img.shields.io/badge/Download_for_macOS-v0.3.1-brightgreen?style=for-the-badge&logo=apple" alt="Download for macOS" />
+  <a href="https://github.com/outworked/outworked/releases/download/v0.4.0/Outworked-0.4.0-arm64.dmg">
+    <img src="https://img.shields.io/badge/Download_for_macOS-v0.4.0-brightgreen?style=for-the-badge&logo=apple" alt="Download for macOS" />
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/outworked/outworked/releases"><img src="https://img.shields.io/badge/version-0.3.1-green.svg" alt="Version" /></a>
+  <a href="https://github.com/outworked/outworked/stargazers"><img src="https://img.shields.io/github/stars/outworked/outworked?style=social" alt="GitHub Stars" /></a>
+  <a href="https://github.com/outworked/outworked/releases"><img src="https://img.shields.io/badge/version-0.4.0-green.svg" alt="Version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="License: GPL-3.0" /></a>
   <img src="https://img.shields.io/badge/platform-macOS-lightgrey.svg" alt="Platform" />
 </p>
@@ -41,7 +43,8 @@
   <a href="#features"><strong>Features</strong></a> ·
   <a href="#skills"><strong>Skills</strong></a> ·
   <a href="#mcp-servers"><strong>MCP Servers</strong></a> ·
-  <a href="#channels--triggers"><strong>Channels & Triggers</strong></a>
+  <a href="#channels--triggers"><strong>Channels & Triggers</strong></a> ·
+  <a href="#asset-packs--customize-your-office"><strong>Asset Packs</strong></a>
 </p>
 
 ---
@@ -57,7 +60,7 @@
 
 ## Example Workflows
 
-These are real things you can do today, not a roadmap. (probably)
+These are real things you can do today:
 
 ### "Build me a landing page and send it to my cofounder"
 
@@ -87,7 +90,7 @@ No scripts to maintain. No GitHub Actions to debug. Just an agent with a schedul
 3. A **Writer** agent collects all three findings, writes a structured comparison doc, and commits it to your repo
 4. The Writer asks if you want it sent to Slack — you approve, and it posts to #product
 
-Three agents working simultaneously, finishing in minutes what would take you probably weeks.
+Three agents working simultaneously, finishing in minutes what would take you hours.
 
 ### "Triage the 12 new GitHub issues from last night"
 
@@ -95,15 +98,6 @@ Three agents working simultaneously, finishing in minutes what would take you pr
 2. It reads each one, labels by priority and type, assigns to the right team member, and adds a first response comment
 3. For any bug it can reproduce, it assigns a **Backend Engineer** agent to investigate and open a draft PR with a fix
 4. You get a Slack summary of what was triaged, what's in progress, and what needs your attention
-5. You lay off the whole office with impunity
-
-### "Post to LinkedIn 13 times a day"
-
-1. **LinkedIn Guru** agent looks at LinkedInLunatics
-2. It uses the posts as inspiration
-3. It posts them on your behalf every hour using its built in browser
-4. ???
-5. Profit
 
 ---
 
@@ -147,6 +141,7 @@ Three agents working simultaneously, finishing in minutes what would take you pr
 - **Background Mode** — Minimize and let agents keep working. Tray icon keeps you updated
 - **Parallel Processing** — Multiple agents tackle subtasks simultaneously
 - **Desktop Notifications** — Get pinged when tasks finish or agents need approval
+- **Asset Packs** — Customize your office with custom sprites, furniture, backgrounds, and fonts — drop a folder and go
 - **Original Soundtrack** — Because every office needs a vibe
 
 ---
@@ -199,11 +194,11 @@ npm run electron:dev
 
 ## Scripts
 
-| Command                  | Description                                                                 |
-| ------------------------ | --------------------------------------------------------------------------- |
-| `npm run dev`            | Start Vite dev server (browser only, no Electron) probably doesnt work      |
-| `npm run electron:dev`   | Build and launch the full Electron app in dev mode                          |
-| `npm run electron:build` | Package distributable (dmg/zip on macOS, exe on Windows, AppImage on Linux) |
+| Command                  | Description                                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------------- |
+| `npm run dev`            | Start Vite dev server (browser only, no Electron) for testing only. Won't work correctly. |
+| `npm run electron:dev`   | Build and launch the full Electron app in dev mode                                        |
+| `npm run electron:build` | Package distributable (dmg/zip on macOS, exe on Windows, AppImage on Linux)               |
 
 ---
 
@@ -239,7 +234,8 @@ electron/
 └── triggers/         # Trigger engine, webhooks, and scheduling
 
 public/
-└── music/            # Background music tracks
+├── music/            # Background music tracks
+└── assets/           # Bundled asset packs (installed on first launch)
 ```
 
 ---
@@ -272,7 +268,7 @@ Skills can be **bundled** (ship with the app), **custom** (created in the UI and
 | Web Browser | Navigate, click, fill forms, screenshot — full Chromium browser |
 | Scheduler   | Create and manage scheduled tasks (cron, interval, one-time)    |
 
-More coming soon promise.
+More coming soon.
 
 ---
 
@@ -414,6 +410,78 @@ Every office needs a vibe. Outworked ships with an original soundtrack featuring
 
 Toggle music from the player in the bottom-left corner.
 
+You can add your own music by dropping it in the ~/.outworked/music folder
+
+---
+
+## Asset Packs — Customize Your Office
+
+Outworked supports **asset packs** that let you completely reskin the office. Drop a folder into `~/.outworked/assets/` or use the **Import Pack** button in the app, and your office gets a new look.
+
+A single pack can include any combination of:
+
+| Category       | What it does                                                         |
+| -------------- | -------------------------------------------------------------------- |
+| **Employees**  | Replace the procedural pixel characters with custom sprite sheets    |
+| **Furniture**  | Add custom furniture PNGs alongside or instead of the built-in items |
+| **Background** | Replace the office floor, walls, and windows with a custom image     |
+| **Font**       | Replace the pixel UI font with your own `.ttf` or `.woff2`           |
+
+### Quick Start
+
+The simplest pack is just a folder with a PNG:
+
+```
+~/.outworked/assets/my-pack/
+  default.png           # employee sprite sheet — that's all you need
+```
+
+Or go all out:
+
+```
+~/.outworked/assets/my-pack/
+  manifest.json          # optional — everything auto-detects without it
+  background.png         # replaces the office background
+  myfont.ttf             # replaces the UI font
+  employees/
+    default.png          # sprite sheet used for all agents
+    engineer.png         # role-specific sheet
+    designer.png
+  furniture/
+    desk_wooden.png      # auto-detected as a desk (filename starts with "desk")
+    bookshelf.png
+    plant_big.png
+```
+
+### Employee Sprite Sheets
+
+Each sheet is a horizontal strip of animation frames in a fixed order — **idle, walk, type, think** — with 2 frames per state by default (384x48 total for 48px frames). Multi-row grids are also supported, where each row is a state.
+
+The manifest lets you remap states, customize frame rates, and set per-role sheets. Sheets are auto-assigned to agents by role name, or distributed randomly.
+
+### Furniture
+
+Drop PNG images into a `furniture/` subfolder. Files named `desk*` are auto-detected as desks (agents sit at them when working). All furniture can be added, removed, moved, and rotated from the office via long-press.
+
+### Background
+
+Drop a `background.png` (or `bg.png`) into your pack folder. It replaces the entire office floor, walls, rug, and windows. Supports `cover`, `stretch`, and `tile` display modes.
+
+### Font
+
+Drop a `.ttf`, `.woff`, or `.woff2` file into your pack folder. It replaces the pixel font used throughout the UI. The change takes effect immediately when switching packs.
+
+### Managing Packs
+
+Click the grid icon in the sidebar header to open the **Assets** modal:
+
+- **Packs tab** — Select the active pack, or click **Import...** to import a folder or `.zip` file from anywhere on your machine
+- **Furniture tab** — Add or remove built-in and custom furniture items from the office
+
+A bundled example pack (`outworked-default`) is installed on first launch as a starting point. See `~/.outworked/assets/outworked-default/manifest.json` for a fully documented example manifest.
+
+Full documentation: [`electron/assets/assets.md`](electron/assets/assets.md)
+
 ---
 
 ## Contributing
@@ -433,7 +501,7 @@ Please open a discussion first for large changes so we can discuss the approach.
 <details>
 <summary><strong>Is my code sent to the cloud?</strong></summary>
 
-Outworked runs locally on your machine. The models are run by Anthropic, with the same privacy guarantees as using those APIs directly. So yes.
+Outworked runs locally on your machine. The models are run by Anthropic, with the same privacy guarantees as using those APIs directly.
 
 </details>
 
@@ -482,7 +550,7 @@ Absolutely. Agents can browse the web for research, send and receive messages, m
 <details>
 <summary><strong>Does it work on Windows and Linux?</strong></summary>
 
-macOS is the primary platform today. Windows and Linux builds are possible via Electron but haven't been fully tested yet. iMessage channels are macOS-only. They might work but who knows.
+macOS is the primary platform today. Windows and Linux builds are possible via Electron but haven't been fully tested yet. iMessage channels are macOS-only. We will be testing Windows and Linux soon.
 
 </details>
 
